@@ -1,0 +1,7 @@
+git init
+git add .
+git comit -m "primeiro comit"
+
+git remote add origin https://github.com/pedrosavio99/colab-compiler.git
+git branch -M main
+git push -u origin main
