@@ -5,3 +5,5 @@ cd server
 cd compiler_server
 
 python manage.py runserver
+
+python manage.py test api
