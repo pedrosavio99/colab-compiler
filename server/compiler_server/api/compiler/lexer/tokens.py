@@ -1,0 +1,35 @@
+import re
+
+TOKEN_SPECS = [
+    ('IF', r'\bif\b'),
+    ('ELSE', r'\belse\b'),
+    ('WHILE', r'\bwhile\b'),
+    ('FOR', r'\bfor\b'),
+    ('DEF', r'\bdef\b'),
+    ('RETURN', r'\breturn\b'),
+    ('PLUS', r'\+'),
+    ('MINUS', r'-'),
+    ('MULT', r'\*'),
+    ('DIV', r'/'),
+    ('EQ', r'=='),
+    ('NEQ', r'!='),
+    ('LT', r'<'),
+    ('GT', r'>'),
+    ('LE', r'<='),
+    ('GE', r'>='),
+    ('ASSIGN', r'='),
+    ('LPAREN', r'\('),
+    ('RPAREN', r'\)'),
+    ('LBRACK', r'\['),
+    ('RBRACK', r'\]'),
+    ('LBRACE', r'\{'),
+    ('RBRACE', r'\}'),
+    ('COMMA', r','),
+    ('COLON', r':'),
+    ('NUMBER', r'\b\d+\b'),
+    ('ID', r'\b[a-zA-Z_][a-zA-Z0-9_]*\b'),
+    ('STRING', r'"[^"]*"|\'[^\']*\''),
+    ('WHITESPACE', r'[ \t]+'),
+]
+
+TOKEN_REGEX = '|'.join(f'(?P<{name}>{pattern})' for name, pattern in TOKEN_SPECS)
