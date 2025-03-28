@@ -1,0 +1,64 @@
+1. Declaração de Módulo com Portas (Inputs e Outputs)
+O que tem no código: module controle(...) com uma lista enorme de inputs (reset, clock, bi1, etc.) e outputs (motor, port1, etc.), todos com tipos como logic e larguras de bits (ex.: [1:0], [3:0]).
+O que nosso compilador faz: Só suporta módulos sem portas explícitas ou com declarações simples de reg e wire dentro do corpo. Não lidamos com portas na definição do módulo ainda.
+Falta: Suporte pra parsing e geração de inputs/outputs na assinatura do módulo, incluindo larguras de bits e tipos (logic).
+
+2. Tipos de Dados Específicos (logic)
+O que tem no código: Usa logic explicitamente nos inputs e outputs (ex.: input logic reset, output logic [1:0] motor).
+O que nosso compilador faz: Só suporta reg e assume valores inteiros ou binários simples, sem distinção explícita de tipos como logic.
+Falta: Reconhecer logic como um tipo válido e tratá-lo adequadamente (embora em Python possamos mapear como inteiros, precisamos parsear corretamente).
+
+3. Parâmetros (parameter)
+O que tem no código: parameter int tempo_porta = 50; define uma constante com tipo int.
+O que nosso compilador faz: Não suporta parameter ainda.
+Falta: Parsing e geração de constantes definidas por parameter, incluindo o tipo int.
+
+4. Enumeração (typedef enum)
+O que tem no código: typedef enum logic [4:0] { desativar_motor, ... } estados_fsm; define um tipo enumerado para os estados da FSM.
+O que nosso compilador faz: Não suporta typedef nem enum.
+Falta: Suporte pra parsing de enum e geração de equivalentes em Python (podemos usar uma classe ou dicionário pra representar os estados).
+
+5. Declarações de Variáveis Locais com Tipos e Larguras
+O que tem no código: Declarações como logic [4:0] bi;, logic [1:0] estado_motor;, int counter_clk;.
+O que nosso compilador faz: Só suporta reg simples com larguras básicas (ex.: [1:0]) e valores iniciais opcionais.
+Falta: Suporte pra logic como tipo, variáveis locais fora de reg, e tipo int explícito.
+
+6. Assigns
+O que tem no código: Muitos assign pra mapear inputs em vetores (ex.: assign bi[0] = bi1;, assign port1 = port[1:0];).
+O que nosso compilador faz: Não suporta assign ainda.
+Falta: Parsing e geração de atribuições contínuas com vetores e slices (ex.: port[1:0]).
+
+7. Tasks
+O que tem no código: Tasks como atenderAndar, tratarBotaoInterno, tratarBotaoExternoUp, e tratarBotaoExternoDown, com inputs, outputs, e lógica interna (if, case, etc.).
+O que nosso compilador faz: Não suporta task ainda.
+Falta: Parsing de task e geração de funções equivalentes em Python, incluindo parâmetros de entrada/saída.
+
+8. Always com Múltiplas Sensibilidades (posedge/negedge)
+O que tem no código: always @(posedge clock or posedge reset or negedge potencia) com múltiplas condições de borda.
+O que nosso compilador faz: Só suporta always @(posedge ...) com uma condição ou always #delay.
+Falta: Suporte pra múltiplas condições de borda (posedge e negedge) na lista de sensibilidade.
+
+9. Operadores Avançados (|, $countones, etc.)
+O que tem no código: Usa | (OR bit a bit), $countones (conta bits 1), e operações com slices (ex.: |chamadas_ativas[4:1]).
+O que nosso compilador faz: Só suporta operadores básicos (+, ==, ~) em expressões simples.
+Falta: Suporte pra operadores bitwise (|, &, etc.) e funções de sistema como $countones.
+
+10. Case com Condições Complexas
+O que tem no código: case (estado_motor) e case (andar) com várias condições e lógica aninhada.
+O que nosso compilador faz: Suporta if simples, mas não case com múltiplos casos.
+Falta: Parsing e geração de blocos case em Python (usando if-elif-else ou dicionários).
+
+11. Atribuições com Literais Binários (2'b01, etc.)
+O que tem no código: Usa literais como 2'b01, 5'b00001, 12'b000000000000.
+O que nosso compilador faz: Já suporta literais binários básicos (ex.: 2'b00), mas precisamos garantir que larguras maiores (ex.: 12'b...) sejam tratadas corretamente.
+Falta: Verificar suporte completo pra larguras grandes e consistência na tradução pra inteiros em Python.
+
+12. Display de Sistema ($display)
+O que tem no código: $display("ALERTA: ...", $time); pra mensagens de alerta.
+O que nosso compilador faz: Só suporta $monitor básico.
+Falta: Suporte pra $display com formatação e variáveis como $time.
+
+13. Lógica de Vetores e Slices Complexos
+O que tem no código: Operações como port[2*andar-1], |last_andar[4:1], e atribuições em slices (ex.: port[11:10] = 2'b01).
+O que nosso compilador faz: Só suporta acesso simples a variáveis (ex.: self.clk.value).
+Falta: Suporte pra manipulação de vetores com índices calculados e slices em Python.

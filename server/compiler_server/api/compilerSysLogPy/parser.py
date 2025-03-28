@@ -147,7 +147,7 @@ class Parser:
             delay = int(delay_value)
             
             _, lhs = self.consume('IDENTIFIER')
-            self.consume('OPERATOR', '=')
+            self.consume('OPERATOR', '=') 
             rhs = self.parse_expression()
             self.consume('SYMBOL', ';')
             
