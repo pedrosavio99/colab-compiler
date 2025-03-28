@@ -89,7 +89,7 @@ const App = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[#8bd162] via-[#d6d2d2] to-[#d86c6c] flex items-center justify-center p-4">
       {/* Register Screen */}
       {screen === "register" && (
         <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md transform transition-all duration-500 scale-100 hover:scale-105">
@@ -198,7 +198,7 @@ const App = () => {
 
       {/* Home Screen */}
       {screen === "home" && (
-        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-4xl transform transition-all duration-500 scale-100 hover:scale-105">
+        <div className="bg-[#FBFBFE] rounded-2xl shadow-2xl p-8 w-full max-w-4xl transform transition-all duration-500 scale-100">
           <h1 className="text-3xl font-bold text-center text-gray-800 mb-6 animate-fade-in-down">
             Welcome, {user?.name || "User"}!
           </h1>
@@ -287,14 +287,6 @@ const App = () => {
                         className="w-full bg-gray-600 text-white py-2 rounded-lg hover:bg-gray-700 transition-all duration-300"
                       >
                         Copiar Código
-                      </Button>
-                      <Button
-                        onClick={() => pasteFromClipboard(setCompiledResult)}
-                        variant="primario"
-                        status="default"
-                        className="w-full bg-gray-600 text-white py-2 rounded-lg hover:bg-gray-700 transition-all duration-300"
-                      >
-                        Colar Código
                       </Button>
                     </div>
                     <AceEditor

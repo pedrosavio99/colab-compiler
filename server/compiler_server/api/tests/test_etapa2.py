@@ -2,244 +2,156 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import status
 
-class Etapa1TestCase(TestCase):
+class SyslogPyTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    def test_print_number_systemverilog(self):
-        """Testa a geração de SystemVerilog para um print simples com número."""
-        input_code = "print(12)"
-        response = self.client.post('/api/compile/', {'code': input_code}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        sv_code = data['systemverilog']
-        expected_sv_code = (
-            "module main;\n"
-            "    initial begin\n"
-            "        $display(\"%0d\", 12);\n"
-            "    end\n"
-            "endmodule"
-        )
-        self.assertEqual(sv_code, expected_sv_code, "Código SystemVerilog gerado não corresponde ao esperado.")
-
-    def test_print_string_systemverilog(self):
-        """Testa a geração de SystemVerilog para um print com string."""
-        input_code = 'print("Hello, World!")'
-        response = self.client.post('/api/compile/', {'code': input_code}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        sv_code = data['systemverilog']
-        expected_sv_code = (
-            "module main;\n"
-            "    initial begin\n"
-            "        $display(\"\\\"Hello, World!\\\"\");\n"
-            "    end\n"
-            "endmodule"
-        )
-        self.assertEqual(sv_code, expected_sv_code, "Código SystemVerilog gerado não corresponde ao esperado.")
-
-    def test_simple_assignment_systemverilog(self):
-        """Testa a geração de SystemVerilog para uma atribuição simples."""
-        input_code = "x = 42"
-        response = self.client.post('/api/compile/', {'code': input_code}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        sv_code = data['systemverilog']
-        expected_sv_code = (
-            "module main;\n"
-            "    int x;\n"
-            "    assign x = 42;\n"
-            "endmodule"
-        )
-        self.assertEqual(sv_code, expected_sv_code, "Código SystemVerilog gerado não corresponde ao esperado.")
-
-    def test_float_assignment_systemverilog(self):
-        """Testa a geração de SystemVerilog para uma atribuição com float."""
-        input_code = "y = 3.14"
-        response = self.client.post('/api/compile/', {'code': input_code}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        sv_code = data['systemverilog']
-        expected_sv_code = (
-            "module main;\n"
-            "    real y;\n"
-            "    assign y = 3.14;\n"
-            "endmodule"
-        )
-        self.assertEqual(sv_code, expected_sv_code, "Código SystemVerilog gerado não corresponde ao esperado.")
-
-    def test_boolean_assignment_systemverilog(self):
-        """Testa a geração de SystemVerilog para uma atribuição com booleano."""
-        input_code = "z = True"
-        response = self.client.post('/api/compile/', {'code': input_code}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        sv_code = data['systemverilog']
-        expected_sv_code = (
-            "module main;\n"
-            "    wire z;\n"
-            "    assign z = 1;\n"
-            "endmodule"
-        )
-        self.assertEqual(sv_code, expected_sv_code, "Código SystemVerilog gerado não corresponde ao esperado.")
-
-    def test_if_statement_systemverilog(self):
-        """Testa a geração de SystemVerilog para uma estrutura if simples."""
+    def test_counter_with_monitor(self):
+        """Testa a geração de Python a partir de um Verilog com contador, clock e $monitor."""
         input_code = (
-            "x = 10\n"
-            "if x > 5:\n"
-            "    y = 20\n"
-        )
-        response = self.client.post('/api/compile/', {'code': input_code}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        sv_code = data['systemverilog']
-        expected_sv_code = (
             "module main;\n"
-            "    int x;\n"
-            "    int y;\n"
-            "    assign x = 10;\n"
-            "    always @(*) begin\n"
-            "        if (x > 5) begin\n"
-            "            assign y = 20;\n"
-            "        end\n"
-            "    end\n"
+            "  reg clk = 0;\n"
+            "  reg reset = 1;\n"
+            "  reg [1:0] count;\n"
+            "  always #5 clk = ~clk;\n"
+            "  always @(posedge clk or posedge reset) begin\n"
+            "    if (reset)\n"
+            "      count <= 2'b00;\n"
+            "    else if (count == 2'b11)\n"
+            "      count <= 2'b00;\n"
+            "    else\n"
+            "      count <= count + 1;\n"
+            "  end\n"
+            "  initial begin\n"
+            "    $monitor(\"Tempo: %t | Count: %d\", $time, count);\n"
+            "    #10 reset = 0;\n"
+            "    #60 $finish;\n"
+            "  end\n"
             "endmodule"
         )
-        self.assertEqual(sv_code, expected_sv_code, "Código SystemVerilog gerado não corresponde ao esperado.")
+        response = self.client.post('/api/compile-syslog-py/', {'code': input_code}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK, f"Erro na API: {response.json()}")
+        data = response.json()
+        py_code = data['python']
+        
+        expected_py_code = (
+            "class Signal:\n"
+            "    def __init__(self, value=0, bit_width=None):\n"
+            "        self.value = value\n"
+            "        self.bit_width = bit_width\n"
+            "        if bit_width:\n"
+            "            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n"
+            "\n"
+            "    def set_value(self, value):\n"
+            "        if self.bit_width:\n"
+            "            self.value = value & self.max_value\n"
+            "        else:\n"
+            "            self.value = value\n"
+            "\n"
+            "class main:\n"
+            "    def __init__(self):\n"
+            "        self.clk = Signal(bit_width=None, value=0)  # reg\n"
+            "        self.reset = Signal(bit_width=None, value=1)  # reg\n"
+            "        self.count = Signal(bit_width=(1, 0))  # reg\n"
+            "        self.time = 0  # Simulação de $time\n"
+            "\n"
+            "    def update_combinational(self):\n"
+            "        pass\n"
+            "\n"
+            "    def update_sequential(self):\n"
+            "        # Clock gerado com atraso de 5 unidades\n"
+            "        # Simulação simplificada: alterna o sinal\n"
+            "        self.clk.set_value(~ self.clk.value)\n"
+            "        # Sensível a posedge de clk, posedge de reset\n"
+            "        # Simulação simplificada: atualiza na borda\n"
+            "        if self.reset.value:\n"
+            "            self.count.set_value(0)\n"
+            "        else:\n"
+            "            if self.count.value == 3:\n"
+            "                self.count.set_value(0)\n"
+            "            else:\n"
+            "                self.count.set_value(self.count.value + 1)\n"
+            "\n"
+            "    def run_initial(self):\n"
+            "        # Simulação do bloco initial\n"
+            "        print(f\"Tempo: {self.time} | Count: {self.count.value}\")\n"
+            "        if self.time == 10:\n"
+            "            self.reset.set_value(0)\n"
+            "        if self.time == 60:\n"
+            "            return False  # $finish\n"
+            "        return True\n"
+            "\n"
+            "    def run(self):\n"
+            "        while self.run_initial():\n"
+            "            self.update_combinational()\n"
+            "            self.update_sequential()\n"
+            "            self.time += 5\n"
+            "\n"
+            "# Teste manual\n"
+            "if __name__ == \"__main__\":\n"
+            "    sim = main()\n"
+            "    sim.run()"
+        )
+        self.assertEqual(py_code.strip(), expected_py_code.strip(), "Código Python gerado não corresponde ao esperado.")
 
-    def test_for_loop_systemverilog(self):
-        """Testa a geração de SystemVerilog para um loop for simples."""
+    def test_simple_clock(self):
+        """Testa a geração de Python a partir de um Verilog simples com clock e $finish."""
         input_code = (
-            "for i in 5:\n"
-            "    x = i + 1\n"
-        )
-        response = self.client.post('/api/compile/', {'code': input_code}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        sv_code = data['systemverilog']
-        expected_sv_code = (
             "module main;\n"
-            "    int i;\n"
-            "    int x;\n"
-            "    for (int i = 0; i < 5; i = i + 1) begin\n"
-            "            assign x = (i + 1);\n"
-            "    end\n"
+            "  reg clk = 0;\n"
+            "  always #5 clk = ~clk;\n"
+            "  initial begin\n"
+            "    #50 $finish;\n"
+            "  end\n"
             "endmodule"
         )
-        self.assertEqual(sv_code, expected_sv_code, "Código SystemVerilog gerado não corresponde ao esperado.")
-
-    def test_while_loop_systemverilog(self):
-        """Testa a geração de SystemVerilog para um loop while simples."""
-        input_code = (
-            "x = 0\n"
-            "while x < 3:\n"
-            "    x = x + 1\n"
-        )
-        response = self.client.post('/api/compile/', {'code': input_code}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response = self.client.post('/api/compile-syslog-py/', {'code': input_code}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK, f"Erro na API: {response.json()}")
         data = response.json()
-        sv_code = data['systemverilog']
-        expected_sv_code = (
-            "module main;\n"
-            "    int x;\n"
-            "    assign x = 0;\n"
-            "    while (x < 3) begin\n"
-            "            assign x = (x + 1);\n"
-            "    end\n"
-            "endmodule"
+        py_code = data['python']
+        
+        expected_py_code = (
+            "class Signal:\n"
+            "    def __init__(self, value=0, bit_width=None):\n"
+            "        self.value = value\n"
+            "        self.bit_width = bit_width\n"
+            "        if bit_width:\n"
+            "            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n"
+            "\n"
+            "    def set_value(self, value):\n"
+            "        if self.bit_width:\n"
+            "            self.value = value & self.max_value\n"
+            "        else:\n"
+            "            self.value = value\n"
+            "\n"
+            "class main:\n"
+            "    def __init__(self):\n"
+            "        self.clk = Signal(bit_width=None, value=0)  # reg\n"
+            "        self.time = 0  # Simulação de $time\n"
+            "\n"
+            "    def update_combinational(self):\n"
+            "        pass\n"
+            "\n"
+            "    def update_sequential(self):\n"
+            "        # Clock gerado com atraso de 5 unidades\n"
+            "        # Simulação simplificada: alterna o sinal\n"
+            "        self.clk.set_value(~ self.clk.value)\n"
+            "\n"
+            "    def run_initial(self):\n"
+            "        # Simulação do bloco initial\n"
+            "        if self.time == 50:\n"
+            "            return False  # $finish\n"
+            "        return True\n"
+            "\n"
+            "    def run(self):\n"
+            "        while self.run_initial():\n"
+            "            self.update_combinational()\n"
+            "            self.update_sequential()\n"
+            "            self.time += 5\n"
+            "\n"
+            "# Teste manual\n"
+            "if __name__ == \"__main__\":\n"
+            "    sim = main()\n"
+            "    sim.run()"
         )
-        self.assertEqual(sv_code, expected_sv_code, "Código SystemVerilog gerado não corresponde ao esperado.")
-
-    def test_complex_flow_1_systemverilog(self):
-        """Testa um fluxo complexo com if aninhado, for e print."""
-        input_code = (
-            "x = 0\n"
-            "for i in 10:\n"
-            "    if i > 5:\n"
-            "        x = x + i\n"
-            "        if x > 20:\n"
-            "            print(x)\n"
-            "    else:\n"
-            "        x = x + 1\n"
-        )
-        response = self.client.post('/api/compile/', {'code': input_code}, format='json')
-        if response.status_code != status.HTTP_200_OK:
-            print("Erro retornado:", response.json())  # Adiciona print para depuração
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        sv_code = data['systemverilog']
-        expected_sv_code = (
-            "module main;\n"
-            "    int x;\n"
-            "    int i;\n"
-            "    assign x = 0;\n"
-            "    for (int i = 0; i < 10; i = i + 1) begin\n"
-            "            always @(*) begin\n"
-            "                if (i > 5) begin\n"
-            "                    assign x = (x + i);\n"
-            "                    always @(*) begin\n"
-            "                        if (x > 20) begin\n"
-            "                        end\n"
-            "                    end\n"
-            "                end\n"
-            "                else begin\n"
-            "                    assign x = (x + 1);\n"
-            "                end\n"
-            "            end\n"
-            "    end\n"
-            "    initial begin\n"
-            "        $display(\"%0d\", x);\n"
-            "    end\n"
-            "endmodule"
-        )
-        self.assertEqual(sv_code, expected_sv_code, "Código SystemVerilog gerado não corresponde ao esperado.")
-
-    def test_complex_flow_2_systemverilog(self):
-        """Testa um fluxo complexo com função, while, if e print."""
-        input_code = (
-            "def sum(a, b):\n"
-            "    result = a + b\n"
-            "    return result\n"
-            "x = 0\n"
-            "while x < 100:\n"
-            "    if x < 50:\n"
-            "        x = sum(x, 10)\n"
-            "        print(x)\n"
-            "    else:\n"
-            "        x = sum(x, 5)\n"
-            "        print(x)\n"
-        )
-        response = self.client.post('/api/compile/', {'code': input_code}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        sv_code = data['systemverilog']
-        expected_sv_code = (
-            "module main;\n"
-            "    int result;\n"
-            "    int a;\n"
-            "    int b;\n"
-            "    int x;\n"
-            "    function void sum(input int a, input int b);\n"
-            "            assign result = (a + b);\n"
-            "    endfunction\n"
-            "    assign x = 0;\n"
-            "    while (x < 100) begin\n"
-            "            always @(*) begin\n"
-            "                if (x < 50) begin\n"
-            "                    sum(x, 10);\n"
-            "                    assign x = result;\n"
-            "                end\n"
-            "                else begin\n"
-            "                    sum(x, 5);\n"
-            "                    assign x = result;\n"
-            "                end\n"
-            "            end\n"
-            "    end\n"
-            "    initial begin\n"
-            "        $display(\"%0d\", x);\n"
-            "        $display(\"%0d\", x);\n"
-            "    end\n"
-            "endmodule"
-        )
-        self.assertEqual(sv_code, expected_sv_code, "Código SystemVerilog gerado não corresponde ao esperado.")
+        self.assertEqual(py_code.strip(), expected_py_code.strip(), "Código Python gerado não corresponde ao esperado.")
