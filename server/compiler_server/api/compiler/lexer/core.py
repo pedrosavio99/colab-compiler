@@ -17,16 +17,28 @@ def lexer(code):
         pos = 0
         while pos < len(line):
             match = re.match(TOKEN_REGEX, line[pos:])
-            if not match:
-                raise SyntaxError(f"Caractere inválido na linha {line_num}: {line[pos:]}")
-            kind = match.lastgroup
-            value = match.group()
-            if kind != 'WHITESPACE':
-                tokens.append((kind, value))
-            pos += match.end()
-
+            if match:
+                kind = match.lastgroup
+                value = match.group()
+                if kind == 'STRING':
+                    if not (value.startswith('"') and value.endswith('"')) and not (value.startswith("'") and value.endswith("'")):
+                        tokens.append(('UNKNOWN', value[0]))
+                        pos += 1
+                        while pos < len(line) and line[pos] not in ' \t\n':
+                            tokens.append(('UNKNOWN', line[pos]))
+                            pos += 1
+                        continue
+                    tokens.append(('STRING', value))
+                elif kind != 'WHITESPACE':
+                    tokens.append((kind, value))
+                pos += match.end()
+            else:
+                tokens.append(('UNKNOWN', line[pos]))
+                pos += 1
+        print(f"Linha {line_num}: {line} -> Tokens: {tokens[-5:]}")
         tokens.append(('NEWLINE', '\n'))
 
+    # Fechar todos os níveis de indentação no final do arquivo
     while len(indent_stack) > 1:
         indent_stack.pop()
         tokens.append(('DEDENT', ''))

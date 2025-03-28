@@ -1,140 +1,158 @@
-from .utils import sanitize_name, find_identifiers, check_for_string_op
+from ..parser.ast import ASTNode
 
 class SystemVerilogGenerator:
     def __init__(self):
-        self.code = []
-        self.current_module_code = []
-        self.indent_level = 0
         self.variables = {}
-        self.modules = []
-        self.main_signals = []
-        self.main_instances = []
-        self.string_functions = set()
-
-    def indent(self):
-        return "    " * self.indent_level
+        self.functions = {}
+        self.current_scope = []
+        self.display_statements = []  # Para armazenar os $display e agrupá-los no bloco initial
 
     def generate(self, ast):
-        self.visit(ast)
-        self.code.append("// Módulos gerados a partir do programa Python")
-        self.code.extend([module for module in self.modules])
-        self.code.append("\nmodule main;")
-        self.indent_level += 1
-        for signal in self.main_signals:
-            self.code.append(f"{self.indent()}wire [31:0] {signal};")
-        self.code.append("")
-        for instance in self.main_instances:
-            self.code.append(f"{self.indent()}{instance}")
-        self.indent_level -= 1
-        self.code.append("endmodule")
-        return "\n".join(self.code)
-
-    def visit_assignment(self, node):
-        identifier = node.children[0].value
-        expression = self.visit(node.children[1])
-        
-        if node.children[1].type == 'function_call':
-            func_name = node.children[1].value
-            args = [self.visit(arg) for arg in node.children[1].children]
-            instance_name = f"{func_name}_{identifier}_inst"
-            if func_name not in self.string_functions:
-                self.main_signals.append(identifier)
-                self.variables[identifier] = ('numeric', None)
-                self.main_instances.append(f"{func_name} {instance_name} ({', '.join(args)}, {identifier});")
+        if ast is None:
+            return ""
+        if ast.type == 'program':
+            code = ["module main;"]
+            for statement in ast.children:
+                gen_code = self.generate(statement)
+                if gen_code and not statement.type == 'print':  # $display será tratado separadamente
+                    code.append(gen_code)
+            # Adiciona as declarações de variáveis
+            for var, var_type in self.variables.items():
+                code.append(f"    {var_type} {var};")
+            # Adiciona as instâncias (como assign)
+            for statement in ast.children:
+                if statement.type == 'assignment':
+                    identifier = statement.children[0].value
+                    expr_code = self.generate_expression(statement.children[1])
+                    code.append(f"    assign {identifier} = {expr_code};")
+            # Adiciona o bloco initial com os $display
+            if self.display_statements:
+                code.append("    initial begin")
+                code.extend([f"        {stmt}" for stmt in self.display_statements])
+                code.append("    end")
+            code.append("endmodule")
+            return "\n".join(code)
+        elif ast.type == 'assignment':
+            identifier = ast.children[0].value
+            expression = ast.children[1]
+            var_type = self.determine_type(expression)
+            if identifier in self.variables:
+                if self.variables[identifier] != var_type:
+                    raise ValueError(f"Erro: Tipagem dinâmica não permitida. '{identifier}' já foi definido como {self.variables[identifier]}.")
             else:
-                result = self.get_string_function_result(func_name, node.children[1])
-                self.variables[identifier] = ('string', result)
-                adjusted_args = []
-                for arg in node.children[1].children:
-                    if arg.type == 'string':
-                        adjusted_args.append(arg.value.strip("'"))
-                    else:
-                        adjusted_args.append(self.visit(arg))
-                self.main_instances.append(f"{func_name} {instance_name} ({', '.join(adjusted_args)});")
-        else:
-            used_identifiers = find_identifiers(node.children[1])
-            module_code = []
-            inputs = [f"input wire [31:0] {var}" for var in used_identifiers if var != identifier]
-            ports = ", ".join(inputs + [f"output wire [31:0] {identifier}"]) if inputs else f"output wire [31:0] {identifier}"
-            module_code.append(f"module assign_{identifier} ({ports});")
-            self.indent_level += 1
-            module_code.append(f"{self.indent()}assign {identifier} = {expression};")
-            self.indent_level -= 1
-            module_code.append(f"endmodule\n")
-            self.modules.append("\n".join(module_code))
-            self.main_signals.append(identifier)
-            self.variables[identifier] = ('numeric', None)
-            instance_args = ", ".join(list(used_identifiers) + [identifier]) if used_identifiers else identifier
-            self.main_instances.append(f"assign_{identifier} assign_{identifier}_inst ({instance_args});")
+                self.variables[identifier] = var_type
+            return ""  # Não retorna código aqui, será tratado no nível do programa
+        elif ast.type == 'if':
+            condition = self.generate_expression(ast.children[0])
+            then_block = self.generate_block(ast.children[1])
+            else_block = self.generate_block(ast.children[2]) if len(ast.children) > 2 else None
+            code = f"    always @(*) begin\n        if ({condition}) begin\n{then_block}        end"
+            if else_block:
+                code += f"\n        else begin\n{else_block}        end"
+            code += "\n    end"
+            return code
+        elif ast.type == 'for':
+            loop_var = ast.children[0].value
+            limit = self.generate_expression(ast.children[1])
+            body = self.generate_block(ast.children[2])
+            self.variables[loop_var] = "wire [31:0]"
+            code = f"    for (int {loop_var} = 0; {loop_var} < {limit}; {loop_var} = {loop_var} + 1) begin\n{body}    end"
+            return code
+        elif ast.type == 'while':
+            condition = self.generate_expression(ast.children[0])
+            body = self.generate_block(ast.children[1])
+            code = f"    while ({condition}) begin\n{body}    end"
+            return code
+        elif ast.type == 'function':
+            func_name = ast.value
+            params = ast.children[0].children
+            body = ast.children[1]
+            param_decls = []
+            for param in params:
+                param_name = param.value
+                self.variables[param_name] = "wire [31:0]"
+                param_decls.append(f"input wire [31:0] {param_name}")
+            param_str = ", ".join(param_decls)
+            self.functions[func_name] = [p.value for p in params]
+            body_code = self.generate_block(body)
+            code = f"    function void {func_name}({param_str});\n{body_code}    endfunction"
+            return code
+        elif ast.type == 'print':
+            expr = self.generate_expression(ast.children[0])
+            expr_type = self.determine_type(ast.children[0])
+            if expr_type == "string":
+                self.display_statements.append(f'$display("{expr}");')
+            else:
+                self.display_statements.append(f'$display("%0d", {expr});')
+            return ""  # Não retorna código aqui, será tratado no bloco initial
+        return ""
 
-    def get_string_function_result(self, func_name, node):
-        if func_name in self.string_functions:
-            args = [self.visit(arg) for arg in node.children]
-            if func_name == 'saudacao':
-                return f"Olá, {args[0]}!"
-            elif func_name == 'info_pessoa':
-                return f"{args[0]} tem {args[1]} anos"
-            elif func_name == 'descrever_numero':
-                return f"O número é {args[0]}"
-            elif func_name == 'mensagem':
-                return f"O quadrado é {args[0]}"
-            elif func_name == 'carol':
-                return f"{args[0]} vai tomar no , brincadiera po"
-        return "?"
+    def generate_block(self, node):
+        if node.type != 'block':
+            return self.generate(node)
+        code = []
+        for stmt in node.children:
+            stmt_code = self.generate(stmt)
+            if stmt_code:
+                code.append(f"            {stmt_code}")
+        return "\n".join(code)
 
-    def visit_function_def(self, node):
-        func_name = node.children[0].value
-        params = self.visit(node.children[1])
-        self.current_module_code = []
-        has_string_op = check_for_string_op(node.children[2])
-        if has_string_op:
-            self.string_functions.add(func_name)
-            self.current_module_code.append(f"module {func_name} ({params});")
-        else:
-            self.current_module_code.append(f"module {func_name} ({params}, output wire [31:0] out);")
-        self.indent_level += 1
-        self.visit(node.children[2])
-        self.indent_level -= 1
-        self.current_module_code.append(f"endmodule\n")
-        self.modules.append("\n".join(self.current_module_code))
+    def generate_expression(self, node):
+        if node.type == 'number':
+            return str(node.value)
+        elif node.type == 'string':
+            return node.value
+        elif node.type == 'bool':
+            return "1" if node.value else "0"
+        elif node.type == 'identifier':
+            if node.value not in self.variables:
+                raise ValueError(f"Erro: Variável '{node.value}' não declarada.")
+            return node.value
+        elif node.type == 'operation':
+            left = self.generate_expression(node.children[0])
+            right = self.generate_expression(node.children[1])
+            return f"({left} {node.operator} {right})"
+        elif node.type == 'logical':
+            left = self.generate_expression(node.children[0])
+            right = self.generate_expression(node.children[1])
+            op = "&&" if node.operator == "and" else "||"
+            return f"({left} {op} {right})"
+        elif node.type == 'bitwise':
+            left = self.generate_expression(node.children[0])
+            right = self.generate_expression(node.children[1])
+            return f"({left} {node.operator} {right})"
+        elif node.type == 'comparison':
+            left = self.generate_expression(node.children[0])
+            right = self.generate_expression(node.children[1])
+            return f"({left} {node.operator} {right})"
+        elif node.type == 'unary':
+            operand = self.generate_expression(node.children[0])
+            if node.operator == "not":
+                return f"(!{operand})"
+            return f"({node.operator}{operand})"
+        raise ValueError(f"Tipo de nó '{node.type}' não suportado para geração de SystemVerilog.")
 
-    def visit_function_call(self, node):
-        func_name = node.value
-        args = [self.visit(arg) for arg in node.children]
-        if func_name == 'print':
-            valid_args = []
-            display_args = []
-            for i, child in enumerate(node.children):
-                if child.type == 'string':
-                    raw_string = child.value.strip("'")
-                    display_args.append(f"{raw_string}")
-                else:
-                    var_name = child.value
-                    if var_name in self.variables:
-                        var_type, var_value = self.variables[var_name]
-                        if var_type == 'numeric':
-                            valid_args.append((i, var_name))
-                            display_args.append(var_name)
-                        elif var_type == 'string' and var_value:
-                            display_args.append(f"{var_value}")
-                    else:
-                        display_args.append('"?"')
-            ports = [f"input wire [31:0] {arg}" for _, arg in valid_args]
-            port_list = ", ".join(ports) if ports else ""
-            module_name = f"print_{sanitize_name('_'.join([str(self.visit(arg)) for arg in node.children]))}"
-            module_code = []
-            module_code.append(f"module {module_name}({port_list});")
-            self.indent_level += 1
-            module_code.append(f"{self.indent()}initial begin")
-            self.indent_level += 1
-            display_args_str = ", ".join([f'"{arg}"' if not arg.startswith('"') and not arg.isidentifier() else arg for arg in display_args])
-            module_code.append(f"{self.indent()}$display({display_args_str});")
-            self.indent_level -= 1
-            module_code.append(f"{self.indent()}end")
-            self.indent_level -= 1
-            module_code.append(f"endmodule\n")
-            self.modules.append("\n".join(module_code))
-            instance_args = [arg for _, arg in valid_args]
-            instance_args_str = ", ".join(instance_args) if instance_args else ""
-            self.main_instances.append(f"{module_name} {module_name}_inst({instance_args_str});")
-        return f"{func_name}_result"
+    def determine_type(self, node):
+        if node.type == 'number':
+            return "real" if isinstance(node.value, float) else "int"
+        elif node.type == 'string':
+            return "string"
+        elif node.type == 'bool':
+            return "wire"  # Alterado de "bit" para "wire"
+        elif node.type == 'identifier':
+            if node.value not in self.variables:
+                raise ValueError(f"Erro: Variável '{node.value}' não declarada.")
+            return self.variables[node.value]
+        elif node.type in ('operation', 'bitwise', 'comparison'):
+            left_type = self.determine_type(node.children[0])
+            right_type = self.determine_type(node.children[1])
+            if left_type == "real" or right_type == "real":
+                return "real"
+            return "int"
+        elif node.type == 'logical':
+            return "wire"  # Alterado de "bit" para "wire"
+        elif node.type == 'unary':
+            if node.operator == "not":
+                return "wire"  # Alterado de "bit" para "wire"
+            return self.determine_type(node.children[0])
+        raise ValueError(f"Tipo de nó '{node.type}' não suportado para determinação de tipo.")

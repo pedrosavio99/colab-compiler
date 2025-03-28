@@ -1,2 +1,5 @@
-from .core import parse
-from .ast import ASTNode
+from .core import Parser
+
+def parse(tokens):
+    parser = Parser(tokens)
+    return parser.parse()
