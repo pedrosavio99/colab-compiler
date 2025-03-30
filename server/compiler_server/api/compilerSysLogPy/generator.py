@@ -98,10 +98,12 @@ def generate_python(ast):
                     for sub_stmt in stmt['statements']:
                         if sub_stmt['type'] == 'Monitor':
                             format_string = sub_stmt['args'][0]['value']
-                            specifiers = [part for part in format_string.split() if part in ('%t', '%b', '%d')]
+                            # Adicionar %0d como especificador válido
+                            specifiers = [part for part in format_string.split() if part in ('%t', '%b', '%d', '%0d')]
                             args = []
                             if len(sub_stmt['args']) > 1:
-                                if '%t' in format_string:
+                                # Assumir que o primeiro especificador numérico é $time
+                                if '%t' in format_string or '%0d' in format_string:
                                     args.append("self.time")
                                 for arg in sub_stmt['args'][1]['value']:
                                     if arg[0] == 'IDENTIFIER':
@@ -113,8 +115,8 @@ def generate_python(ast):
                             new_format_string = format_string
                             for i, spec in enumerate(specifiers):
                                 if i < len(args):
-                                    if spec == '%t':
-                                        new_format_string = new_format_string.replace('%t', '{self.time}', 1)
+                                    if spec == '%t' or spec == '%0d':
+                                        new_format_string = new_format_string.replace(spec, f'{{{args[i]}}}', 1)
                                     elif spec == '%b':
                                         new_format_string = new_format_string.replace('%b', f'{{{args[i]}:b}}', 1)
                                     elif spec == '%d':
