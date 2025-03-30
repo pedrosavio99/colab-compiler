@@ -41,9 +41,11 @@ class Parser:
                 ports.append(self.parse_port())
                 if self.current_token()[1] == ',':
                     self.consume('SYMBOL', ',')
+                elif self.current_token()[1] != ')':
+                    raise ValueError(f"Esperado ',' ou ')', encontrado {self.current_token()[1]}")
             self.consume('SYMBOL', ')')
         
-        self.consume('SYMBOL', ';')  # Sempre espera ';' após o cabeçalho do módulo
+        self.consume('SYMBOL', ';')
 
         body = []
         while self.pos < len(self.tokens) and self.current_token()[1] != 'endmodule':
@@ -83,20 +85,25 @@ class Parser:
     def parse_port(self):
         print("Parsing port...")
         port_type = self.current_token()[1]
-        if port_type in ('input', 'output', 'inout'):
-            self.consume('KEYWORD')
-        
-        data_type = None
-        if self.current_token()[1] in ('reg', 'wire'):
-            data_type = self.current_token()[1]
-            self.consume('KEYWORD')
+        if port_type not in ('input', 'output', 'inout'):
+            raise ValueError(f"Tipo de porta inválido: {port_type}")
+        self.consume('KEYWORD')
 
-        bit_width = None
-        if self.current_token()[1] == '[':
-            bit_width = self.parse_bit_width()
+        data_type = None
+        if self.current_token()[1] == 'logic':
+            data_type = self.current_token()[1]
+            self.consume('IDENTIFIER')
+
+        bit_width = self.parse_bit_width() if self.current_token()[1] == '[' else None
 
         _, port_name = self.consume('IDENTIFIER')
-        return {'type': port_type, 'name': port_name, 'data_type': data_type, 'bit_width': bit_width}
+        
+        return {
+            'type': port_type,
+            'name': port_name,
+            'data_type': data_type,
+            'bit_width': bit_width
+        }
 
     def parse_declaration(self):
         print("Parsing declaration...")
@@ -254,7 +261,7 @@ class Parser:
             return self.parse_if()
         else:
             _, lhs = self.consume('IDENTIFIER')
-            op_type, op_value = self.consume('OPERATOR')  # Suporta '=' ou '<='
+            op_type, op_value = self.consume('OPERATOR')
             if op_value not in ('=', '<='):
                 raise ValueError(f"Esperado '=' ou '<=', encontrado {op_value}")
             rhs = self.parse_expression()
@@ -293,22 +300,62 @@ class Parser:
     def parse_expression(self):
         print("Parsing expression...")
         expr = []
-        while self.current_token()[1] not in (';', ')', ',', 'begin', 'end'):
+        while self.current_token()[1] not in (';', ')', 'begin', 'end'):
             token_type, token_value = self.current_token()
-            if token_type in ('IDENTIFIER', 'NUMBER', 'STRING'):
+            print(f"Analisando token na expressão: ({token_type}, {token_value})")
+            
+            if token_type == 'SYMBOL' and token_value == '{':  # Início de concatenação
+                print("Detectado início de concatenação '{'")
+                expr.append(('OPERATOR', 'CONCAT_START'))
+                self.consume('SYMBOL', '{')
+                concat_elements = []
+                
+                while self.current_token()[1] != '}':
+                    print(f"Parsing elemento dentro de {{}}: {self.current_token()}")
+                    if self.current_token()[0] in ('IDENTIFIER', 'NUMBER'):
+                        concat_elements.append(self.parse_simple_expression())
+                    else:
+                        raise ValueError(f"Esperado identificador ou número em concatenação, encontrado {self.current_token()}")
+                    
+                    if self.current_token()[1] == ',':
+                        self.consume('SYMBOL', ',')
+                        print("Vírgula consumida em concatenação")
+                    elif self.current_token()[1] != '}':
+                        raise ValueError(f"Esperado ',' ou '}}', encontrado {self.current_token()[1]}")
+                
+                self.consume('SYMBOL', '}')
+                print("Detectado fim de concatenação '}'")
+                expr.append(('CONCAT', concat_elements))
+                expr.append(('OPERATOR', 'CONCAT_END'))
+            
+            elif token_type in ('IDENTIFIER', 'NUMBER', 'STRING'):
                 expr.append((token_type, token_value))
+                self.consume()
             elif token_type == 'OPERATOR':
                 expr.append((token_type, token_value))
+                self.consume()
             elif token_value == '(':
                 expr.append(('SYMBOL', '('))
                 self.consume()
                 expr.extend(self.parse_expression())
                 self.consume('SYMBOL', ')')
                 expr.append(('SYMBOL', ')'))
-                continue
-            self.consume()
+            else:
+                self.consume()  # Avança em caso de tokens desconhecidos
+            
+            print(f"Estado atual da expressão: {expr}")
+        
         print(f"Expressão parseada: {expr}")
         return expr
+
+    def parse_simple_expression(self):
+        """Helper para parsear expressões simples dentro de concatenações"""
+        token_type, token_value = self.current_token()
+        print(f"Parsing expressão simples: ({token_type}, {token_value})")
+        if token_type in ('IDENTIFIER', 'NUMBER'):
+            self.consume()
+            return (token_type, token_value)
+        raise ValueError(f"Esperado IDENTIFIER ou NUMBER, encontrado {token_type} {token_value}")
 
 def parse(tokens):
     parser = Parser(tokens)

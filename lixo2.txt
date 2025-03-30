@@ -1,0 +1,892 @@
+ola estou criando um compilador e estamos nesta etapa aqui: 1. Declaração de Módulo com Portas (Inputs e Outputs)
+O que tem no código: module controle(...) com uma lista enorme de inputs (reset, clock, bi1, etc.) e outputs (motor, port1, etc.), todos com tipos como logic e larguras de bits (ex.: [1:0], [3:0]).
+O que nosso compilador faz: Só suporta módulos sem portas explícitas ou com declarações simples de reg e wire dentro do corpo. Não lidamos com portas na definição do módulo ainda.
+Falta: Suporte pra parsing e geração de inputs/outputs na assinatura do módulo, incluindo larguras de bits e tipos (logic)., atualmente os aquivos sao: view: # api/views.py
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from .compilerSysLogPy.lexer import lexer as syslog_lexer
+from .compilerSysLogPy.parser import parse as syslog_parse
+from .compilerSysLogPy.generator import generate_python
+
+@api_view(['POST'])
+def compiler_syslog_py(request):
+    try:
+        code = request.data.get('code', '')
+        if not code:
+            return Response({'error': 'Nenhum código fornecido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Tokenização
+        tokens = syslog_lexer(code)
+
+        # Parsing
+        ast = syslog_parse(tokens)
+
+        # Geração de Python
+        py_code = generate_python(ast)
+        
+        print(py_code)
+
+        return Response({
+            'tokens': tokens,
+            'ast': str(ast),
+            'python': py_code
+        }, status=status.HTTP_200_OK)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': f"Erro interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  lexer: def lexer(code):
+    tokens = []
+    keywords = {
+        'module', 'endmodule', 'input', 'output', 'inout', 'wire', 'reg',
+        'always', 'begin', 'end', 'if', 'else', 'assign', 'posedge', 'negedge', 'or',
+        '$monitor', '$time', '$finish', 'initial'  # Adicionado 'initial'
+    }
+    operators = {
+        '+', '-', '*', '/', '%', '==', '!=', '<', '>', '<=', '>=', '&&', '||',
+        '!', '&', '|', '^', '~', '<<', '>>', '=', ':', '#' 
+    }
+    
+    print("Iniciando lexer...")
+    i = 0
+    while i < len(code):
+        char = code[i]
+
+        if char.isspace():
+            i += 1
+            continue
+
+        if char == '/' and i + 1 < len(code):
+            if code[i + 1] == '/':
+                while i < len(code) and code[i] != '\n':
+                    i += 1
+                continue
+            elif code[i + 1] == '*':
+                i += 2
+                while i < len(code) and not (code[i - 1] == '*' and code[i] == '/'):
+                    i += 1
+                i += 1
+                continue
+
+        if char == '"':  # Tratamento de strings
+            i += 1
+            string = ''
+            while i < len(code) and code[i] != '"':
+                string += code[i]
+                i += 1
+            i += 1  # Pula o '"'
+            token = ('STRING', string)
+            tokens.append(token)
+            print(f"Token adicionado: {token}")
+            continue
+
+        if char.isalpha() or char == '_' or char == '$':
+            word = ''
+            while i < len(code) and (code[i].isalnum() or code[i] in '_$'):
+                word += code[i]
+                i += 1
+            token = ('KEYWORD', word) if word in keywords else ('IDENTIFIER', word)
+            tokens.append(token)
+            print(f"Token adicionado: {token}")
+            continue
+
+        if char.isdigit() or (char == "'" and i > 0 and code[i - 1].isdigit()):
+            num = char
+            i += 1
+            while i < len(code) and (code[i].isdigit() or code[i] in "'bhdx"):
+                num += code[i]
+                i += 1
+            token = ('NUMBER', num)
+            tokens.append(token)
+            print(f"Token adicionado: {token}")
+            continue
+
+        op = char
+        if i + 1 < len(code) and char + code[i + 1] in operators:
+            op = char + code[i + 1]
+            i += 2
+        elif char in operators:
+            i += 1
+        if op in operators:
+            token = ('OPERATOR', op)
+            tokens.append(token)
+            print(f"Token adicionado: {token}")
+            continue
+
+        if char in '();,[]{}@':
+            token = ('SYMBOL', char)
+            tokens.append(token)
+            print(f"Token adicionado: {token}")
+            i += 1
+            continue
+
+        token = ('UNKNOWN', char)
+        tokens.append(token)
+        print(f"Token desconhecido: {token}")
+        i += 1
+
+    print("Lexer concluído. Tokens gerados:", tokens)
+    return tokens   parser: class Parser:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.pos = 0
+        print("Iniciando parser com tokens:", tokens)
+
+    def current_token(self):
+        token = self.tokens[self.pos] if self.pos < len(self.tokens) else (None, None)
+        print(f"Token atual (pos {self.pos}): {token}")
+        return token
+
+    def consume(self, expected_type=None, expected_value=None):
+        token_type, token_value = self.current_token()
+        if (expected_type and token_type != expected_type) or (expected_value and token_value != expected_value):
+            raise ValueError(f"Esperado {expected_type} {expected_value}, encontrado {token_type} {token_value}")
+        self.pos += 1
+        print(f"Consumido: ({token_type}, {token_value})")
+        return token_type, token_value
+
+    def parse(self):
+        ast = {'type': 'Program', 'body': []}
+        print("Parsing programa...")
+        while self.pos < len(self.tokens):
+            token_type, token_value = self.current_token()
+            if token_type == 'KEYWORD' and token_value == 'module':
+                ast['body'].append(self.parse_module())
+            else:
+                self.pos += 1
+        print("AST gerado:", ast)
+        return ast
+
+    def parse_module(self):
+        print("Parsing module...")
+        self.consume('KEYWORD', 'module')
+        _, module_name = self.consume('IDENTIFIER')
+        
+        ports = []
+        if self.current_token()[1] == '(':  # Portas são opcionais
+            self.consume('SYMBOL', '(')
+            while self.current_token()[1] != ')':
+                ports.append(self.parse_port())
+                if self.current_token()[1] == ',':
+                    self.consume('SYMBOL', ',')
+            self.consume('SYMBOL', ')')
+        
+        self.consume('SYMBOL', ';')  # Sempre espera ';' após o cabeçalho do módulo
+
+        body = []
+        while self.pos < len(self.tokens) and self.current_token()[1] != 'endmodule':
+            token_type, token_value = self.current_token()
+            if token_value in ('input', 'output', 'inout', 'wire', 'reg'):
+                body.append(self.parse_declaration())
+            elif token_value == 'assign':
+                body.append(self.parse_assign())
+            elif token_value == 'always':
+                body.append(self.parse_always())
+            elif token_value == 'initial':
+                body.append(self.parse_initial())
+            else:
+                print(f"Ignorando token no corpo do módulo: {token_type} {token_value}")
+                self.pos += 1
+        self.consume('KEYWORD', 'endmodule')
+        return {'type': 'Module', 'name': module_name, 'ports': ports, 'body': body}
+
+    def parse_bit_width(self):
+        if self.current_token()[1] != '[':
+            return None
+        self.consume('SYMBOL', '[')
+        
+        high = 0
+        if self.current_token()[0] == 'NUMBER':
+            _, high = self.consume('NUMBER')
+        
+        self.consume('OPERATOR', ':')
+        
+        low = 0
+        if self.current_token()[0] == 'NUMBER':
+            _, low = self.consume('NUMBER')
+        
+        self.consume('SYMBOL', ']')
+        return (int(high), int(low))
+
+    def parse_port(self):
+        print("Parsing port...")
+        port_type = self.current_token()[1]
+        if port_type in ('input', 'output', 'inout'):
+            self.consume('KEYWORD')
+        
+        data_type = None
+        if self.current_token()[1] in ('reg', 'wire'):
+            data_type = self.current_token()[1]
+            self.consume('KEYWORD')
+
+        bit_width = None
+        if self.current_token()[1] == '[':
+            bit_width = self.parse_bit_width()
+
+        _, port_name = self.consume('IDENTIFIER')
+        return {'type': port_type, 'name': port_name, 'data_type': data_type, 'bit_width': bit_width}
+
+    def parse_declaration(self):
+        print("Parsing declaration...")
+        decl_type = self.current_token()[1]
+        self.consume('KEYWORD')
+
+        bit_width = None
+        if self.current_token()[1] == '[':
+            bit_width = self.parse_bit_width()
+
+        _, name = self.consume('IDENTIFIER')
+        
+        initial_value = None
+        if self.current_token()[1] == '=':
+            self.consume('OPERATOR', '=')
+            _, initial_value = self.consume('NUMBER')
+            initial_value = int(initial_value)
+        
+        self.consume('SYMBOL', ';')
+        return {
+            'type': 'Declaration', 
+            'decl_type': decl_type, 
+            'name': name, 
+            'bit_width': bit_width, 
+            'initial_value': initial_value
+        }
+
+    def parse_assign(self):
+        print("Parsing assign...")
+        self.consume('KEYWORD', 'assign')
+        _, lhs = self.consume('IDENTIFIER')
+        self.consume('OPERATOR', '=')
+        rhs = self.parse_expression()
+        self.consume('SYMBOL', ';')
+        return {'type': 'Assign', 'lhs': lhs, 'rhs': rhs}
+
+    def parse_always(self):
+        print("Parsing always...")
+        self.consume('KEYWORD', 'always')
+        
+        delay = None
+        sensitivity_list = []
+        token_type, token_value = self.current_token()
+        
+        if token_value == '#':
+            self.consume('OPERATOR', '#')
+            _, delay_value = self.consume('NUMBER')
+            delay = int(delay_value)
+            
+            _, lhs = self.consume('IDENTIFIER')
+            self.consume('OPERATOR', '=') 
+            rhs = self.parse_expression()
+            self.consume('SYMBOL', ';')
+            
+            return {'type': 'AlwaysDelay', 'delay': delay, 'statement': {'type': 'Assignment', 'lhs': lhs, 'rhs': rhs}}
+        
+        elif token_value == '@':
+            self.consume('SYMBOL', '@')
+            
+            has_paren = self.current_token()[1] == '('
+            if has_paren:
+                self.consume('SYMBOL', '(')
+            
+            while True:
+                edge = None
+                if self.current_token()[1] in ('posedge', 'negedge'):
+                    edge = self.current_token()[1]
+                    self.consume('KEYWORD')
+                
+                _, signal = self.consume('IDENTIFIER')
+                sensitivity_list.append({'edge': edge, 'signal': signal})
+                
+                next_token = self.current_token()
+                if has_paren and next_token[1] == ')':
+                    break
+                elif not has_paren and next_token[1] == 'begin':
+                    break
+                elif next_token[1] in (',', 'or'):
+                    self.consume()
+                else:
+                    raise ValueError(f"Esperado ',', 'or' ou ')', encontrado {next_token[1]}")
+            
+            if has_paren:
+                self.consume('SYMBOL', ')')
+            
+            self.consume('KEYWORD', 'begin')
+            
+            statements = []
+            while self.current_token()[1] != 'end':
+                statements.append(self.parse_statement())
+            
+            self.consume('KEYWORD', 'end')
+            return {'type': 'Always', 'sensitivity_list': sensitivity_list, 'statements': statements}
+        
+        else:
+            raise ValueError(f"Esperado '@' ou '#', encontrado {token_value}")
+
+    def parse_initial(self):
+        print("Parsing initial...")
+        self.consume('KEYWORD', 'initial')
+        self.consume('KEYWORD', 'begin')
+        
+        statements = []
+        while self.current_token()[1] != 'end':
+            token_type, token_value = self.current_token()
+            if token_value == '$monitor':
+                statements.append(self.parse_monitor())
+            elif token_value == '#':
+                statements.append(self.parse_delay())
+            else:
+                statements.append(self.parse_statement())
+        
+        self.consume('KEYWORD', 'end')
+        return {'type': 'Initial', 'statements': statements}
+
+    def parse_monitor(self):
+        print("Parsing $monitor...")
+        self.consume('KEYWORD', '$monitor')
+        self.consume('SYMBOL', '(')
+        
+        args = []
+        while self.current_token()[1] != ')':
+            if self.current_token()[0] == 'STRING':
+                _, string = self.consume('STRING')
+                args.append({'type': 'String', 'value': string})
+            else:
+                args.append({'type': 'Expression', 'value': self.parse_expression()})
+            if self.current_token()[1] == ',':
+                self.consume('SYMBOL', ',')
+        
+        self.consume('SYMBOL', ')')
+        self.consume('SYMBOL', ';')
+        return {'type': 'Monitor', 'args': args}
+
+    def parse_delay(self):
+        print("Parsing delay...")
+        self.consume('OPERATOR', '#')
+        _, delay_value = self.consume('NUMBER')
+        
+        if self.current_token()[1] == '$finish':
+            self.consume('KEYWORD', '$finish')
+            self.consume('SYMBOL', ';')
+            return {'type': 'Finish', 'delay': int(delay_value)}
+        else:
+            _, lhs = self.consume('IDENTIFIER')
+            self.consume('OPERATOR', '=')  # Suporta '='
+            rhs = self.parse_expression()
+            self.consume('SYMBOL', ';')
+            return {'type': 'DelayAssignment', 'delay': int(delay_value), 'lhs': lhs, 'rhs': rhs}
+
+    def parse_statement(self):
+        print("Parsing statement...")
+        token_type, token_value = self.current_token()
+        if token_value == 'if':
+            return self.parse_if()
+        else:
+            _, lhs = self.consume('IDENTIFIER')
+            op_type, op_value = self.consume('OPERATOR')  # Suporta '=' ou '<='
+            if op_value not in ('=', '<='):
+                raise ValueError(f"Esperado '=' ou '<=', encontrado {op_value}")
+            rhs = self.parse_expression()
+            self.consume('SYMBOL', ';')
+            return {'type': 'Assignment', 'lhs': lhs, 'rhs': rhs, 'operator': op_value}
+
+    def parse_if(self):
+        print("Parsing if...")
+        self.consume('KEYWORD', 'if')
+        self.consume('SYMBOL', '(')
+        condition = self.parse_expression()
+        self.consume('SYMBOL', ')')
+        
+        true_statements = []
+        if self.current_token()[1] == 'begin':
+            self.consume('KEYWORD', 'begin')
+            while self.current_token()[1] != 'end':
+                true_statements.append(self.parse_statement())
+            self.consume('KEYWORD', 'end')
+        else:
+            true_statements.append(self.parse_statement())
+        
+        false_statements = []
+        if self.current_token()[1] == 'else':
+            self.consume('KEYWORD', 'else')
+            if self.current_token()[1] == 'begin':
+                self.consume('KEYWORD', 'begin')
+                while self.current_token()[1] != 'end':
+                    false_statements.append(self.parse_statement())
+                self.consume('KEYWORD', 'end')
+            else:
+                false_statements.append(self.parse_statement())
+        
+        return {'type': 'If', 'condition': condition, 'true_statements': true_statements, 'false_statements': false_statements}
+
+    def parse_expression(self):
+        print("Parsing expression...")
+        expr = []
+        while self.current_token()[1] not in (';', ')', ',', 'begin', 'end'):
+            token_type, token_value = self.current_token()
+            if token_type in ('IDENTIFIER', 'NUMBER', 'STRING'):
+                expr.append((token_type, token_value))
+            elif token_type == 'OPERATOR':
+                expr.append((token_type, token_value))
+            elif token_value == '(':
+                expr.append(('SYMBOL', '('))
+                self.consume()
+                expr.extend(self.parse_expression())
+                self.consume('SYMBOL', ')')
+                expr.append(('SYMBOL', ')'))
+                continue
+            self.consume()
+        print(f"Expressão parseada: {expr}")
+        return expr
+
+def parse(tokens):
+    parser = Parser(tokens)
+    return parser.parse() e generator: def generate_python(ast):
+    print("Iniciando geração de código Python com AST:", ast)
+    python_code = []
+    python_code.append("class Signal:\n    def __init__(self, value=0, bit_width=None):\n        self.value = value\n        self.bit_width = bit_width\n        if bit_width:\n            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n\n    def set_value(self, value):\n        if self.bit_width:\n            self.value = value & self.max_value\n        else:\n            self.value = value\n\n")
+
+    for node in ast['body']:
+        if node['type'] == 'Module':
+            module_name = node['name']
+            ports = node['ports']
+            body = node['body']
+
+            python_code.append(f"class {module_name}:")
+            python_code.append("    def __init__(self):")
+            print(f"Gerando __init__ para módulo {module_name}")
+
+            for port in ports:
+                port_name = port['name']
+                bit_width = port.get('bit_width')
+                data_type = port.get('data_type', '')
+                comment = f"{port['type']}"
+                if data_type:
+                    comment += f", {data_type}"
+                if bit_width:
+                    comment += f", [{bit_width[0]}:{bit_width[1]}]"
+                python_code.append(f"        self.{port_name} = Signal(bit_width={bit_width})  # {comment}")
+                print(f"Adicionado porto: self.{port_name}")
+
+            for stmt in body:
+                if stmt['type'] == 'Declaration':
+                    var_name = stmt['name']
+                    bit_width = stmt.get('bit_width')
+                    initial_value = stmt.get('initial_value')
+                    value_str = f", value={initial_value}" if initial_value is not None else ""
+                    python_code.append(f"        self.{var_name} = Signal(bit_width={bit_width}{value_str})  # {stmt['decl_type']}")
+                    print(f"Adicionada declaração: self.{var_name}")
+
+            python_code.append("        self.time = 0  # Simulação de $time")
+
+            python_code.append("\n    def update_combinational(self):")
+            combinational_found = False
+            for stmt in body:
+                if stmt['type'] == 'Assign':
+                    lhs = stmt['lhs']
+                    rhs = translate_expression(stmt['rhs'])
+                    python_code.append(f"        self.{lhs}.set_value({rhs})")
+                    print(f"Adicionada atribuição combinacional: self.{lhs}.set_value({rhs})")
+                    combinational_found = True
+            if not combinational_found:
+                python_code.append("        pass")
+
+            python_code.append("\n    def update_sequential(self):")
+            sequential_found = False
+            for stmt in body:
+                if stmt['type'] == 'Always':
+                    sensitivity_list = stmt['sensitivity_list']
+                    statements = stmt['statements']
+                    sensitivity_comment = "        # Sensível a " + ", ".join(
+                        f"{s['edge']} de {s['signal']}" if s['edge'] else s['signal'] 
+                        for s in sensitivity_list
+                    )
+                    python_code.append(sensitivity_comment)
+                    python_code.append("        # Simulação simplificada: atualiza na borda")
+                    for sub_stmt in statements:
+                        python_code.append(translate_statement(sub_stmt, indent=2))
+                    print(f"Adicionado bloco always: {sensitivity_list}")
+                    sequential_found = True
+                elif stmt['type'] == 'AlwaysDelay':
+                    python_code.append(f"        # Clock gerado com atraso de {stmt['delay']} unidades")
+                    python_code.append(f"        # Simulação simplificada: alterna o sinal")
+                    python_code.append(translate_statement(stmt['statement'], indent=2))
+                    print(f"Adicionado AlwaysDelay com delay {stmt['delay']}")
+                    sequential_found = True
+            if not sequential_found:
+                python_code.append("        pass")
+
+            has_initial = False
+            for stmt in body:
+                if stmt['type'] == 'Initial':
+                    python_code.append("\n    def run_initial(self):")
+                    python_code.append("        # Simulação do bloco initial")
+                    for sub_stmt in stmt['statements']:
+                        if sub_stmt['type'] == 'Monitor':
+                            format_string = sub_stmt['args'][0]['value']
+                            format_string = format_string.replace('%t', '{self.time}').replace('%d', '{self.count.value}')
+                            python_code.append(f"        print(f\"{format_string}\")")
+                        elif sub_stmt['type'] == 'DelayAssignment':
+                            python_code.append(f"        if self.time == {sub_stmt['delay']}:")
+                            python_code.append(f"            self.{sub_stmt['lhs']}.set_value({translate_expression(sub_stmt['rhs'])})")
+                        elif sub_stmt['type'] == 'Finish':
+                            python_code.append(f"        if self.time == {sub_stmt['delay']}:")
+                            python_code.append("            return False  # $finish")
+                    python_code.append("        return True")
+                    has_initial = True
+                    break
+
+            python_code.append("\n    def run(self):")
+            if has_initial:
+                python_code.append("        while self.run_initial():")
+                python_code.append("            self.update_combinational()")
+                python_code.append("            self.update_sequential()")
+                for stmt in body:
+                    if stmt['type'] == 'AlwaysDelay':
+                        python_code.append(f"            self.time += {stmt['delay']}")
+                        break
+                else:
+                    python_code.append("            self.time += 1  # Default time step")
+            else:
+                python_code.append("        self.update_combinational()")
+                python_code.append("        self.update_sequential()")
+
+            # Adicionando o bloco de teste manual apenas uma vez
+            python_code.append("\n# Teste manual")
+            python_code.append("if __name__ == \"__main__\":")
+            python_code.append(f"    sim = {module_name}()")
+            python_code.append("    sim.run()")
+
+    result = "\n".join(python_code)
+    print("Código Python gerado:", result)
+    return result
+
+def translate_expression(expr):
+    print(f"Traduzindo expressão: {expr}")
+    result = []
+    for token_type, token_value in expr:
+        if token_type == 'IDENTIFIER':
+            result.append(f"self.{token_value}.value")
+        elif token_type == 'NUMBER':
+            if "'b" in token_value:
+                bits, value = token_value.split("'b")
+                result.append(str(int(value, 2)))
+            elif "'h" in token_value:
+                bits, value = token_value.split("'h")
+                result.append(str(int(value, 16)))
+            else:
+                result.append(token_value)
+        elif token_type == 'OPERATOR':
+            if token_value == '&&':
+                result.append('and')
+            elif token_value == '||':
+                result.append('or')
+            elif token_value == '!':
+                result.append('not ')
+            elif token_value == '&':
+                result.append('&')
+            elif token_value == '|':
+                result.append('|')
+            elif token_value == '^':
+                result.append('^')
+            elif token_value == '~':
+                result.append('~')
+            else:
+                result.append(token_value)
+        elif token_type == 'SYMBOL':
+            result.append(token_value)
+        elif token_type == 'STRING':
+            result.append(f"'{token_value}'")
+    translated = ' '.join(result)
+    print(f"Expressão traduzida: {translated}")
+    return translated
+
+def translate_statement(stmt, indent=0):
+    print(f"Traduzindo statement: {stmt}")
+    indent_str = "    " * indent
+    if stmt['type'] == 'Assignment':
+        lhs = stmt['lhs']
+        rhs = translate_expression(stmt['rhs'])
+        return f"{indent_str}self.{lhs}.set_value({rhs})"
+    elif stmt['type'] == 'If':
+        condition = translate_expression(stmt['condition'])
+        true_code = [translate_statement(s, indent + 1) for s in stmt['true_statements']]
+        false_code = [translate_statement(s, indent + 1) for s in stmt['false_statements']]
+        code = [f"{indent_str}if {condition}:"]
+        code.extend(true_code)
+        if false_code:
+            code.append(f"{indent_str}else:")
+            code.extend(false_code)
+        return "\n".join(code)
+    return f"{indent_str}pass  # Declaração não suportada: {stmt['type']}", atualmente ao fazer um poste com: module main (
+    input logic a,        // Entrada de 1 bit
+    input logic b,        // Entrada de 1 bit
+    input logic clk,      // Clock de entrada
+    output logic [1:0] y  // Saída de 2 bits
+);
+    reg [1:0] temp;       // Registrador interno pra armazenar o resultado
+
+    // Lógica combinacional: y é a concatenação de a e b
+    always @(posedge clk) begin
+        temp <= {a, b};   // Concatena a e b em temp
+        y <= temp;        // Atribui temp a y
+    end
+
+    // Monitoramento pra debug
+    initial begin
+        $monitor("Tempo: %t | a: %b | b: %b | y: %b", $time, a, b, y);
+        #50 $finish;      // Termina após 50 unidades de tempo
+    end
+endmodule esse codigo que simula os requisitos da etapa 1 temos a seguinte resposta e log: Erro: Esperado SYMBOL ;, encontrado SYMBOL ,   log: [30/Mar/2025 06:09:13] "OPTIONS /api/compile-syslog-py/ HTTP/1.1" 200 0
+Iniciando lexer...
+Token adicionado: ('KEYWORD', 'module')
+Token adicionado: ('IDENTIFIER', 'main')
+Token adicionado: ('SYMBOL', '(')
+Token adicionado: ('KEYWORD', 'input')
+Token adicionado: ('IDENTIFIER', 'logic')
+Token adicionado: ('IDENTIFIER', 'a')
+Token adicionado: ('SYMBOL', ',')
+Token adicionado: ('KEYWORD', 'input')
+Token adicionado: ('IDENTIFIER', 'logic')
+Token adicionado: ('IDENTIFIER', 'b')
+Token adicionado: ('SYMBOL', ',')
+Token adicionado: ('KEYWORD', 'input')
+Token adicionado: ('IDENTIFIER', 'logic')
+Token adicionado: ('IDENTIFIER', 'clk')
+Token adicionado: ('SYMBOL', ',')
+Token adicionado: ('KEYWORD', 'output')
+Token adicionado: ('IDENTIFIER', 'logic')
+Token adicionado: ('SYMBOL', '[')
+Token adicionado: ('NUMBER', '1')
+Token adicionado: ('OPERATOR', ':')
+Token adicionado: ('NUMBER', '0')
+Token adicionado: ('SYMBOL', ']')
+Token adicionado: ('IDENTIFIER', 'y')
+Token adicionado: ('SYMBOL', ')')
+Token adicionado: ('SYMBOL', ';')
+Token adicionado: ('KEYWORD', 'reg')
+Token adicionado: ('SYMBOL', '[')
+Token adicionado: ('NUMBER', '1')
+Token adicionado: ('OPERATOR', ':')
+Token adicionado: ('NUMBER', '0')
+Token adicionado: ('SYMBOL', ']')
+Token adicionado: ('IDENTIFIER', 'temp')
+Token adicionado: ('SYMBOL', ';')
+Token adicionado: ('KEYWORD', 'always')
+Token adicionado: ('SYMBOL', '@')
+Token adicionado: ('SYMBOL', '(')
+Token adicionado: ('KEYWORD', 'posedge')
+Token adicionado: ('IDENTIFIER', 'clk')
+Token adicionado: ('SYMBOL', ')')
+Token adicionado: ('KEYWORD', 'begin')
+Token adicionado: ('IDENTIFIER', 'temp')
+Token adicionado: ('OPERATOR', '<=')
+Token adicionado: ('SYMBOL', '{')
+Token adicionado: ('IDENTIFIER', 'a')
+Token adicionado: ('SYMBOL', ',')
+Token adicionado: ('IDENTIFIER', 'b')
+Token adicionado: ('SYMBOL', '}')
+Token adicionado: ('SYMBOL', ';')
+Token adicionado: ('IDENTIFIER', 'y')
+Token adicionado: ('OPERATOR', '<=')
+Token adicionado: ('IDENTIFIER', 'temp')
+Token adicionado: ('SYMBOL', ';')
+Token adicionado: ('KEYWORD', 'end')
+Token adicionado: ('KEYWORD', 'initial')
+Token adicionado: ('KEYWORD', 'begin')
+Token adicionado: ('KEYWORD', '$monitor')
+Token adicionado: ('SYMBOL', '(')
+Token adicionado: ('STRING', 'Tempo: %t | a: %b | b: %b | y: %b')
+Token adicionado: ('SYMBOL', ',')
+Token adicionado: ('KEYWORD', '$time')
+Token adicionado: ('SYMBOL', ',')
+Token adicionado: ('IDENTIFIER', 'a')
+Token adicionado: ('SYMBOL', ',')
+Token adicionado: ('IDENTIFIER', 'b')
+Token adicionado: ('SYMBOL', ',')
+Token adicionado: ('IDENTIFIER', 'y')
+Token adicionado: ('SYMBOL', ')')
+Token adicionado: ('SYMBOL', ';')
+Token adicionado: ('OPERATOR', '#')
+Token adicionado: ('NUMBER', '50')
+Token adicionado: ('KEYWORD', '$finish')
+Token adicionado: ('SYMBOL', ';')
+Token adicionado: ('KEYWORD', 'end')
+Token adicionado: ('KEYWORD', 'endmodule')
+Lexer concluído. Tokens gerados: [('KEYWORD', 'module'), ('IDENTIFIER', 'main'), ('SYMBOL', '('), ('KEYWORD', 'input'), ('IDENTIFIER', 'logic'), ('IDENTIFIER', 'a'), ('SYMBOL', ','), ('KEYWORD', 'input'), ('IDENTIFIER', 'logic'), ('IDENTIFIER', 'b'), ('SYMBOL', ','), ('KEYWORD', 'input'), ('IDENTIFIER', 'logic'), ('IDENTIFIER', 'clk'), ('SYMBOL', ','), ('KEYWORD', 'output'), ('IDENTIFIER', 'logic'), ('SYMBOL', '['), ('NUMBER', '1'), ('OPERATOR', ':'), ('NUMBER', '0'), ('SYMBOL', ']'), ('IDENTIFIER', 'y'), ('SYMBOL', ')'), ('SYMBOL', ';'), ('KEYWORD', 'reg'), ('SYMBOL', '['), ('NUMBER', '1'), ('OPERATOR', ':'), ('NUMBER', '0'), ('SYMBOL', ']'), ('IDENTIFIER', 'temp'), ('SYMBOL', ';'), ('KEYWORD', 'always'), ('SYMBOL', '@'), ('SYMBOL', '('), ('KEYWORD', 'posedge'), ('IDENTIFIER', 'clk'), ('SYMBOL', ')'), ('KEYWORD', 'begin'), ('IDENTIFIER', 'temp'), ('OPERATOR', '<='), ('SYMBOL', '{'), ('IDENTIFIER', 'a'), ('SYMBOL', ','), ('IDENTIFIER', 'b'), ('SYMBOL', '}'), ('SYMBOL', ';'), ('IDENTIFIER', 'y'), ('OPERATOR', '<='), ('IDENTIFIER', 'temp'), ('SYMBOL', ';'), ('KEYWORD', 'end'), ('KEYWORD', 
+'initial'), ('KEYWORD', 'begin'), ('KEYWORD', '$monitor'), ('SYMBOL', '('), ('STRING', 'Tempo: %t | a: %b | b: %b | y: %b'), ('SYMBOL', ','), ('KEYWORD', '$time'), ('SYMBOL', ','), ('IDENTIFIER', 'a'), ('SYMBOL', ','), ('IDENTIFIER', 'b'), ('SYMBOL', ','), ('IDENTIFIER', 'y'), ('SYMBOL', ')'), ('SYMBOL', ';'), ('OPERATOR', '#'), ('NUMBER', '50'), ('KEYWORD', '$finish'), ('SYMBOL', ';'), ('KEYWORD', 'end'), ('KEYWORD', 'endmodule')]
+Iniciando parser com tokens: [('KEYWORD', 'module'), ('IDENTIFIER', 'main'), ('SYMBOL', '('), ('KEYWORD', 'input'), ('IDENTIFIER', 'logic'), ('IDENTIFIER', 'a'), ('SYMBOL', ','), ('KEYWORD', 'input'), ('IDENTIFIER', 'logic'), ('IDENTIFIER', 'b'), ('SYMBOL', ','), ('KEYWORD', 'input'), ('IDENTIFIER', 'logic'), ('IDENTIFIER', 'clk'), ('SYMBOL', ','), ('KEYWORD', 'output'), ('IDENTIFIER', 'logic'), ('SYMBOL', '['), ('NUMBER', '1'), ('OPERATOR', ':'), ('NUMBER', '0'), ('SYMBOL', ']'), ('IDENTIFIER', 'y'), ('SYMBOL', ')'), ('SYMBOL', ';'), ('KEYWORD', 'reg'), ('SYMBOL', '['), ('NUMBER', '1'), ('OPERATOR', ':'), ('NUMBER', '0'), ('SYMBOL', ']'), ('IDENTIFIER', 'temp'), ('SYMBOL', ';'), ('KEYWORD', 'always'), ('SYMBOL', '@'), ('SYMBOL', '('), ('KEYWORD', 'posedge'), ('IDENTIFIER', 'clk'), ('SYMBOL', ')'), ('KEYWORD', 'begin'), ('IDENTIFIER', 'temp'), ('OPERATOR', '<='), ('SYMBOL', '{'), ('IDENTIFIER', 'a'), ('SYMBOL', ','), ('IDENTIFIER', 'b'), ('SYMBOL', '}'), ('SYMBOL', ';'), ('IDENTIFIER', 'y'), ('OPERATOR', '<='), ('IDENTIFIER', 'temp'), ('SYMBOL', ';'), ('KEYWORD', 'end'), ('KEYWORD', 'initial'), ('KEYWORD', 'begin'), ('KEYWORD', '$monitor'), ('SYMBOL', '('), ('STRING', 'Tempo: %t | a: %b | b: %b | y: %b'), ('SYMBOL', ','), ('KEYWORD', '$time'), ('SYMBOL', ','), ('IDENTIFIER', 'a'), ('SYMBOL', ','), ('IDENTIFIER', 'b'), ('SYMBOL', ','), ('IDENTIFIER', 'y'), ('SYMBOL', ')'), ('SYMBOL', ';'), ('OPERATOR', '#'), ('NUMBER', '50'), ('KEYWORD', '$finish'), ('SYMBOL', ';'), ('KEYWORD', 'end'), ('KEYWORD', 'endmodule')]
+Parsing programa...
+Token atual (pos 0): ('KEYWORD', 'module')
+Parsing module...
+Token atual (pos 0): ('KEYWORD', 'module')
+Consumido: (KEYWORD, module)
+Token atual (pos 1): ('IDENTIFIER', 'main')
+Consumido: (IDENTIFIER, main)
+Token atual (pos 2): ('SYMBOL', '(')
+Token atual (pos 2): ('SYMBOL', '(')
+Consumido: (SYMBOL, ()
+Token atual (pos 3): ('KEYWORD', 'input')
+Parsing port...
+Token atual (pos 3): ('KEYWORD', 'input')
+Token atual (pos 3): ('KEYWORD', 'input')
+Consumido: (KEYWORD, input)
+Token atual (pos 4): ('IDENTIFIER', 'logic')
+Token atual (pos 4): ('IDENTIFIER', 'logic')
+Token atual (pos 4): ('IDENTIFIER', 'logic')
+Consumido: (IDENTIFIER, logic)
+Token atual (pos 5): ('IDENTIFIER', 'a')
+Token atual (pos 5): ('IDENTIFIER', 'a')
+Parsing port...
+Token atual (pos 5): ('IDENTIFIER', 'a')
+Token atual (pos 5): ('IDENTIFIER', 'a')
+Token atual (pos 5): ('IDENTIFIER', 'a')
+Token atual (pos 5): ('IDENTIFIER', 'a')
+Consumido: (IDENTIFIER, a)
+Token atual (pos 6): ('SYMBOL', ',')
+Token atual (pos 6): ('SYMBOL', ',')
+Consumido: (SYMBOL, ,)
+Token atual (pos 7): ('KEYWORD', 'input')
+Parsing port...
+Token atual (pos 7): ('KEYWORD', 'input')
+Token atual (pos 7): ('KEYWORD', 'input')
+Consumido: (KEYWORD, input)
+Token atual (pos 8): ('IDENTIFIER', 'logic')
+Token atual (pos 8): ('IDENTIFIER', 'logic')
+Token atual (pos 8): ('IDENTIFIER', 'logic')
+Consumido: (IDENTIFIER, logic)
+Token atual (pos 9): ('IDENTIFIER', 'b')
+Token atual (pos 9): ('IDENTIFIER', 'b')
+Parsing port...
+Token atual (pos 9): ('IDENTIFIER', 'b')
+Token atual (pos 9): ('IDENTIFIER', 'b')
+Token atual (pos 9): ('IDENTIFIER', 'b')
+Token atual (pos 9): ('IDENTIFIER', 'b')
+Consumido: (IDENTIFIER, b)
+Token atual (pos 10): ('SYMBOL', ',')
+Token atual (pos 10): ('SYMBOL', ',')
+Consumido: (SYMBOL, ,)
+Token atual (pos 11): ('KEYWORD', 'input')
+Parsing port...
+Token atual (pos 11): ('KEYWORD', 'input')
+Token atual (pos 11): ('KEYWORD', 'input')
+Consumido: (KEYWORD, input)
+Token atual (pos 12): ('IDENTIFIER', 'logic')
+Token atual (pos 12): ('IDENTIFIER', 'logic')
+Token atual (pos 12): ('IDENTIFIER', 'logic')
+Consumido: (IDENTIFIER, logic)
+Token atual (pos 13): ('IDENTIFIER', 'clk')
+Token atual (pos 13): ('IDENTIFIER', 'clk')
+Parsing port...
+Token atual (pos 13): ('IDENTIFIER', 'clk')
+Token atual (pos 13): ('IDENTIFIER', 'clk')
+Token atual (pos 13): ('IDENTIFIER', 'clk')
+Token atual (pos 13): ('IDENTIFIER', 'clk')
+Consumido: (IDENTIFIER, clk)
+Token atual (pos 14): ('SYMBOL', ',')
+Token atual (pos 14): ('SYMBOL', ',')
+Consumido: (SYMBOL, ,)
+Token atual (pos 15): ('KEYWORD', 'output')
+Parsing port...
+Token atual (pos 15): ('KEYWORD', 'output')
+Token atual (pos 15): ('KEYWORD', 'output')
+Consumido: (KEYWORD, output)
+Token atual (pos 16): ('IDENTIFIER', 'logic')
+Token atual (pos 16): ('IDENTIFIER', 'logic')
+Token atual (pos 16): ('IDENTIFIER', 'logic')
+Consumido: (IDENTIFIER, logic)
+Token atual (pos 17): ('SYMBOL', '[')
+Token atual (pos 17): ('SYMBOL', '[')
+Parsing port...
+Token atual (pos 17): ('SYMBOL', '[')
+Token atual (pos 17): ('SYMBOL', '[')
+Token atual (pos 17): ('SYMBOL', '[')
+Token atual (pos 17): ('SYMBOL', '[')
+Token atual (pos 17): ('SYMBOL', '[')
+Consumido: (SYMBOL, [)
+Token atual (pos 18): ('NUMBER', '1')
+Token atual (pos 18): ('NUMBER', '1')
+Consumido: (NUMBER, 1)
+Token atual (pos 19): ('OPERATOR', ':')
+Consumido: (OPERATOR, :)
+Token atual (pos 20): ('NUMBER', '0')
+Token atual (pos 20): ('NUMBER', '0')
+Consumido: (NUMBER, 0)
+Token atual (pos 21): ('SYMBOL', ']')
+Consumido: (SYMBOL, ])
+Token atual (pos 22): ('IDENTIFIER', 'y')
+Consumido: (IDENTIFIER, y)
+Token atual (pos 23): ('SYMBOL', ')')
+Token atual (pos 23): ('SYMBOL', ')')
+Token atual (pos 23): ('SYMBOL', ')')
+Consumido: (SYMBOL, ))
+Token atual (pos 24): ('SYMBOL', ';')
+Consumido: (SYMBOL, ;)
+Token atual (pos 25): ('KEYWORD', 'reg')
+Token atual (pos 25): ('KEYWORD', 'reg')
+Parsing declaration...
+Token atual (pos 25): ('KEYWORD', 'reg')
+Token atual (pos 25): ('KEYWORD', 'reg')
+Consumido: (KEYWORD, reg)
+Token atual (pos 26): ('SYMBOL', '[')
+Token atual (pos 26): ('SYMBOL', '[')
+Token atual (pos 26): ('SYMBOL', '[')
+Consumido: (SYMBOL, [)
+Token atual (pos 27): ('NUMBER', '1')
+Token atual (pos 27): ('NUMBER', '1')
+Consumido: (NUMBER, 1)
+Token atual (pos 28): ('OPERATOR', ':')
+Consumido: (OPERATOR, :)
+Token atual (pos 29): ('NUMBER', '0')
+Token atual (pos 29): ('NUMBER', '0')
+Consumido: (NUMBER, 0)
+Token atual (pos 30): ('SYMBOL', ']')
+Consumido: (SYMBOL, ])
+Token atual (pos 31): ('IDENTIFIER', 'temp')
+Consumido: (IDENTIFIER, temp)
+Token atual (pos 32): ('SYMBOL', ';')
+Token atual (pos 32): ('SYMBOL', ';')
+Consumido: (SYMBOL, ;)
+Token atual (pos 33): ('KEYWORD', 'always')
+Token atual (pos 33): ('KEYWORD', 'always')
+Parsing always...
+Token atual (pos 33): ('KEYWORD', 'always')
+Consumido: (KEYWORD, always)
+Token atual (pos 34): ('SYMBOL', '@')
+Token atual (pos 34): ('SYMBOL', '@')
+Consumido: (SYMBOL, @)
+Token atual (pos 35): ('SYMBOL', '(')
+Token atual (pos 35): ('SYMBOL', '(')
+Consumido: (SYMBOL, ()
+Token atual (pos 36): ('KEYWORD', 'posedge')
+Token atual (pos 36): ('KEYWORD', 'posedge')
+Token atual (pos 36): ('KEYWORD', 'posedge')
+Consumido: (KEYWORD, posedge)
+Token atual (pos 37): ('IDENTIFIER', 'clk')
+Consumido: (IDENTIFIER, clk)
+Token atual (pos 38): ('SYMBOL', ')')
+Token atual (pos 38): ('SYMBOL', ')')
+Consumido: (SYMBOL, ))
+Token atual (pos 39): ('KEYWORD', 'begin')
+Consumido: (KEYWORD, begin)
+Token atual (pos 40): ('IDENTIFIER', 'temp')
+Parsing statement...
+Token atual (pos 40): ('IDENTIFIER', 'temp')
+Token atual (pos 40): ('IDENTIFIER', 'temp')
+Consumido: (IDENTIFIER, temp)
+Token atual (pos 41): ('OPERATOR', '<=')
+Consumido: (OPERATOR, <=)
+Parsing expression...
+Token atual (pos 42): ('SYMBOL', '{')
+Token atual (pos 42): ('SYMBOL', '{')
+Token atual (pos 42): ('SYMBOL', '{')
+Consumido: (SYMBOL, {)
+Token atual (pos 43): ('IDENTIFIER', 'a')
+Token atual (pos 43): ('IDENTIFIER', 'a')
+Token atual (pos 43): ('IDENTIFIER', 'a')
+Consumido: (IDENTIFIER, a)
+Token atual (pos 44): ('SYMBOL', ',')
+Expressão parseada: [('IDENTIFIER', 'a')]
+Token atual (pos 44): ('SYMBOL', ',')
+Bad Request: /api/compile-syslog-py/
+[30/Mar/2025 06:09:13] "POST /api/compile-syslog-py/ HTTP/1.1" 400 50

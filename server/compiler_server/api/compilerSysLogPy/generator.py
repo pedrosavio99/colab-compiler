@@ -81,8 +81,32 @@ def generate_python(ast):
                     for sub_stmt in stmt['statements']:
                         if sub_stmt['type'] == 'Monitor':
                             format_string = sub_stmt['args'][0]['value']
-                            format_string = format_string.replace('%t', '{self.time}').replace('%d', '{self.count.value}')
-                            python_code.append(f"        print(f\"{format_string}\")")
+                            specifiers = [part for part in format_string.split() if part in ('%t', '%b', '%d')]
+                            args = []
+                            # Corrigir o mapeamento dos argumentos
+                            if len(sub_stmt['args']) > 1:
+                                # Assumir que o primeiro argumento é $time se %t estiver presente
+                                if '%t' in format_string:
+                                    args.append("self.time")
+                                # Processar os outros argumentos
+                                for arg in sub_stmt['args'][1]['value']:
+                                    if arg[0] == 'IDENTIFIER':
+                                        args.append(f"self.{arg[1]}.value")
+                                    elif arg[0] == 'KEYWORD' and arg[1] == '$time':
+                                        args.append("self.time")
+                                    else:
+                                        args.append(translate_expression([arg]))
+                            # Substituir os especificadores na ordem correta
+                            new_format_string = format_string
+                            for i, spec in enumerate(specifiers):
+                                if i < len(args):
+                                    if spec == '%t':
+                                        new_format_string = new_format_string.replace('%t', '{self.time}', 1)
+                                    elif spec == '%b':
+                                        new_format_string = new_format_string.replace('%b', f'{{{args[i]}:b}}', 1)
+                                    elif spec == '%d':
+                                        new_format_string = new_format_string.replace('%d', f'{{{args[i]}}}', 1)
+                            python_code.append(f"        print(f\"{new_format_string}\")")
                         elif sub_stmt['type'] == 'DelayAssignment':
                             python_code.append(f"        if self.time == {sub_stmt['delay']}:")
                             python_code.append(f"            self.{sub_stmt['lhs']}.set_value({translate_expression(sub_stmt['rhs'])})")
@@ -108,7 +132,6 @@ def generate_python(ast):
                 python_code.append("        self.update_combinational()")
                 python_code.append("        self.update_sequential()")
 
-            # Adicionando o bloco de teste manual apenas uma vez
             python_code.append("\n# Teste manual")
             python_code.append("if __name__ == \"__main__\":")
             python_code.append(f"    sim = {module_name}()")
@@ -121,9 +144,32 @@ def generate_python(ast):
 def translate_expression(expr):
     print(f"Traduzindo expressão: {expr}")
     result = []
-    for token_type, token_value in expr:
-        if token_type == 'IDENTIFIER':
+    i = 0
+    while i < len(expr):
+        token_type, token_value = expr[i]
+        
+        if token_type == 'OPERATOR' and token_value == 'CONCAT_START':
+            i += 1  # Pula o CONCAT_START
+            if i < len(expr) and expr[i][0] == 'CONCAT':
+                concat_elements = expr[i][1]
+                concat_result = []
+                for j, (elem_type, elem_value) in enumerate(reversed(concat_elements)):
+                    if elem_type == 'IDENTIFIER':
+                        concat_result.append(f"(self.{elem_value}.value << {j})")
+                    elif elem_type == 'NUMBER':
+                        concat_result.append(f"({elem_value} << {j})")
+                result.append(" | ".join(concat_result))
+                i += 1  # Pula o CONCAT
+                if i < len(expr) and expr[i][0] == 'OPERATOR' and expr[i][1] == 'CONCAT_END':
+                    i += 1  # Pula o CONCAT_END
+                else:
+                    raise ValueError("Esperado CONCAT_END após concatenação")
+            else:
+                raise ValueError("Esperado CONCAT após CONCAT_START")
+        
+        elif token_type == 'IDENTIFIER':
             result.append(f"self.{token_value}.value")
+            i += 1
         elif token_type == 'NUMBER':
             if "'b" in token_value:
                 bits, value = token_value.split("'b")
@@ -133,6 +179,7 @@ def translate_expression(expr):
                 result.append(str(int(value, 16)))
             else:
                 result.append(token_value)
+            i += 1
         elif token_type == 'OPERATOR':
             if token_value == '&&':
                 result.append('and')
@@ -140,20 +187,21 @@ def translate_expression(expr):
                 result.append('or')
             elif token_value == '!':
                 result.append('not ')
-            elif token_value == '&':
-                result.append('&')
-            elif token_value == '|':
-                result.append('|')
-            elif token_value == '^':
-                result.append('^')
-            elif token_value == '~':
-                result.append('~')
             else:
                 result.append(token_value)
+            i += 1
         elif token_type == 'SYMBOL':
             result.append(token_value)
+            i += 1
         elif token_type == 'STRING':
             result.append(f"'{token_value}'")
+            i += 1
+        elif token_type == 'KEYWORD' and token_value == '$time':
+            result.append("self.time")
+            i += 1
+        else:
+            i += 1  # Avança em caso de token desconhecido
+    
     translated = ' '.join(result)
     print(f"Expressão traduzida: {translated}")
     return translated
