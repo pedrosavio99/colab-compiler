@@ -1,7 +1,7 @@
-1. Declaração de Módulo com Portas (Inputs e Outputs)
-O que tem no código: module controle(...) com uma lista enorme de inputs (reset, clock, bi1, etc.) e outputs (motor, port1, etc.), todos com tipos como logic e larguras de bits (ex.: [1:0], [3:0]).
-O que nosso compilador faz: Só suporta módulos sem portas explícitas ou com declarações simples de reg e wire dentro do corpo. Não lidamos com portas na definição do módulo ainda.
-Falta: Suporte pra parsing e geração de inputs/outputs na assinatura do módulo, incluindo larguras de bits e tipos (logic).
+        1. Declaração de Módulo com Portas (Inputs e Outputs)
+        O que tem no código: module controle(...) com uma lista enorme de inputs (reset, clock, bi1, etc.) e outputs (motor, port1, etc.), todos com tipos como logic e larguras de bits (ex.: [1:0], [3:0]).
+        O que nosso compilador faz: Só suporta módulos sem portas explícitas ou com declarações simples de reg e wire dentro do corpo. Não lidamos com portas na definição do módulo ainda.
+        Falta: Suporte pra parsing e geração de inputs/outputs na assinatura do módulo, incluindo larguras de bits e tipos (logic).
 
 2. Tipos de Dados Específicos (logic)
 O que tem no código: Usa logic explicitamente nos inputs e outputs (ex.: input logic reset, output logic [1:0] motor).
