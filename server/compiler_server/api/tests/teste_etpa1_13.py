@@ -29,11 +29,9 @@ class ConcatMonitorTestCase(TestCase):
         response = self.client.post('/api/compile-syslog-py/', {'code': input_code}, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK, f"Erro na API: {response.json()}")
 
-        # Extrai apenas o 'python' do payload
         data = response.json()
         py_code = data['python']
 
-        # Código Python esperado
         expected_py_code = (
             "class Signal:\n"
             "    def __init__(self, value=0, bit_width=None):\n"
@@ -41,6 +39,7 @@ class ConcatMonitorTestCase(TestCase):
             "        self.bit_width = bit_width\n"
             "        if bit_width:\n"
             "            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n"
+            "        self.prev_value = value  # Para detectar bordas\n"
             "\n"
             "    def set_value(self, value):\n"
             "        if self.bit_width:\n"
@@ -64,8 +63,10 @@ class ConcatMonitorTestCase(TestCase):
             "    def update_sequential(self):\n"
             "        # Sensível a posedge de clk\n"
             "        # Simulação simplificada: atualiza na borda\n"
-            "        self.temp.set_value((self.b.value << 0) | (self.a.value << 1))\n"
-            "        self.y.set_value(self.temp.value)\n"
+            "        if self.clk.value and not self.clk.prev_value:  # Borda positiva\n"
+            "            self.temp.set_value((self.b.value << 0) | (self.a.value << 1))\n"
+            "            self.y.set_value(self.temp.value)\n"
+            "        self.clk.prev_value = self.clk.value\n"
             "\n"
             "    def run_initial(self):\n"
             "        # Simulação do bloco initial\n"
@@ -78,7 +79,7 @@ class ConcatMonitorTestCase(TestCase):
             "        while self.run_initial():\n"
             "            self.update_combinational()\n"
             "            self.update_sequential()\n"
-            "            self.time += 1  # Default time step\n"
+            "            self.time += 1  # Passo de tempo baseado no clock\n"
             "\n"
             "# Teste manual\n"
             "if __name__ == \"__main__\":\n"
@@ -86,5 +87,100 @@ class ConcatMonitorTestCase(TestCase):
             "    sim.run()"
         )
 
-        # Compara apenas o código Python
+        self.assertEqual(py_code.strip(), expected_py_code.strip(), "Código Python gerado não corresponde ao esperado.")
+
+    def test_counter_reset_with_monitor(self):
+        """Testa a geração de Python a partir de um Verilog com contador, reset e $monitor."""
+        input_code = (
+            "module main;\n"
+            "    reg clk = 0;          // Clock interno inicializado em 0\n"
+            "    reg reset = 1;        // Reset inicializado em 1\n"
+            "    reg [3:0] counter;    // Contador de 4 bits (0 a 15)\n"
+            "\n"
+            "    // Gerador de clock\n"
+            "    always #5 clk = ~clk;\n"
+            "\n"
+            "    // Lógica do contador com reset\n"
+            "    always @(posedge clk) begin\n"
+            "        if (reset) begin\n"
+            "            counter <= 4'b0000;  // Reseta pra 0\n"
+            "        end else begin\n"
+            "            counter <= counter + 1;  // Incrementa o contador\n"
+            "        end\n"
+            "    end\n"
+            "\n"
+            "    // Monitoramento e simulação\n"
+            "    initial begin\n"
+            "        $monitor(\"Tempo: %t | clk: %b | reset: %b | counter: %d\", $time, clk, reset, counter);\n"
+            "        #10 reset = 0;       // Desativa o reset após 10 unidades\n"
+            "        #100 $finish;        // Termina após 100 unidades\n"
+            "    end\n"
+            "endmodule"
+        )
+        response = self.client.post('/api/compile-syslog-py/', {'code': input_code}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK, f"Erro na API: {response.json()}")
+
+        data = response.json()
+        py_code = data['python']
+
+        expected_py_code = (
+            "class Signal:\n"
+            "    def __init__(self, value=0, bit_width=None):\n"
+            "        self.value = value\n"
+            "        self.bit_width = bit_width\n"
+            "        if bit_width:\n"
+            "            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n"
+            "        self.prev_value = value  # Para detectar bordas\n"
+            "\n"
+            "    def set_value(self, value):\n"
+            "        if self.bit_width:\n"
+            "            self.value = value & self.max_value\n"
+            "        else:\n"
+            "            self.value = value\n"
+            "\n"
+            "\n"
+            "class main:\n"
+            "    def __init__(self):\n"
+            "        self.clk = Signal(bit_width=None, value=0)  # reg\n"
+            "        self.reset = Signal(bit_width=None, value=1)  # reg\n"
+            "        self.counter = Signal(bit_width=(3, 0))  # reg\n"
+            "        self.time = 0  # Simulação de $time\n"
+            "\n"
+            "    def update_combinational(self):\n"
+            "        pass\n"
+            "\n"
+            "    def update_sequential(self):\n"
+            "        # Clock gerado com atraso de 5 unidades\n"
+            "        # Simulação simplificada: alterna o sinal\n"
+            "        self.clk.set_value(1 - self.clk.value)\n"
+            "        # Sensível a posedge de clk\n"
+            "        # Simulação simplificada: atualiza na borda\n"
+            "        if self.clk.value and not self.clk.prev_value:  # Borda positiva\n"
+            "            if self.reset.value:\n"
+            "                self.counter.set_value(0)\n"
+            "            else:\n"
+            "                self.counter.set_value(self.counter.value + 1)\n"
+            "        self.clk.prev_value = self.clk.value\n"
+            "\n"
+            "    def run_initial(self):\n"
+            "        # Simulação do bloco initial\n"
+            "        print(f\"Tempo: {self.time} | clk: {self.clk.value:b} | reset: {self.reset.value:b} | counter: {self.counter.value}\")\n"
+            "        if self.time == 10:\n"
+            "            self.reset.set_value(0)\n"
+            "        if self.time == 110:\n"
+            "            return False  # $finish\n"
+            "        return True\n"
+            "\n"
+            "    def run(self):\n"
+            "        while self.run_initial():\n"
+            "            self.update_combinational()\n"
+            "            self.update_sequential()\n"
+            "            self.time += 5  # Passo de tempo baseado no clock\n"
+            "\n"
+            "# Teste manual\n"
+            "if __name__ == \"__main__\":\n"
+            "    sim = main()\n"
+            "    sim.run()"
+        )
+
         self.assertEqual(py_code.strip(), expected_py_code.strip(), "Código Python gerado não corresponde ao esperado.")
