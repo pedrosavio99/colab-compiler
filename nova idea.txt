@@ -1,63 +1,15 @@
-ola estou criando um compilador e estamos nesta etapa aqui: 
+# Sistema de Blocos para Processamento em Cadeia
+
+## Descrição
+Este código implementa um sistema escalável baseado no padrão **Chain of Responsibility**, ideal para cenários complexos onde diferentes blocos de processamento precisam atuar sobre um dado sem modificar a estrutura principal do código. 
+
+Cada bloco de código (função ou classe) avalia se pode processar os dados recebidos. Caso não possa, ele encaminha automaticamente a solicitação para o próximo bloco da cadeia, garantindo que o processamento continue até encontrar um bloco adequado ou esgotar as opções disponíveis. 
+
+Essa abordagem permite adicionar novos blocos de processamento sem necessidade de alterar os existentes, garantindo modularidade e facilitando a manutenção do código sem a necessidade de dividir arquivos ou seguir padrões como SOLID.
 
 
-[
 
-2. Tipos de Dados Específicos (logic)
-O que tem no código: Usa logic explicitamente nos inputs e outputs (ex.: input logic reset, output logic [1:0] motor).
-O que nosso compilador faz: Só suporta reg e assume valores inteiros ou binários simples, sem distinção explícita de tipos como logic.
-Falta: Reconhecer logic como um tipo válido e tratá-lo adequadamente (embora em Python possamos mapear como inteiros, precisamos parsear corretamente).
-]
-
-, atualmente os aquivos sao: 
-
-####################################################################################################################
-
-view: # api/views.py
-
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
-from .compilerSysLogPy.lexer import lexer as syslog_lexer
-from .compilerSysLogPy.parser import parse as syslog_parse
-from .compilerSysLogPy.generator import generate_python
-
-@api_view(['POST'])
-def compiler_syslog_py(request):
-    try:
-        code = request.data.get('code', '')
-        if not code:
-            return Response({'error': 'Nenhum código fornecido.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Tokenização
-        tokens = syslog_lexer(code)
-
-        # Parsing
-        ast = syslog_parse(tokens)
-
-        # Geração de Python
-        py_code = generate_python(ast)
-        
-        print(py_code)
-
-        return Response({
-            'tokens': tokens,
-            'ast': str(ast),
-            'python': py_code
-        }, status=status.HTTP_200_OK)
-    except ValueError as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    except Exception as e:
-        return Response({'error': f"Erro interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  
-        
-
-####################################################################################################################  
-        
-lexer: 
-
-[
-
-def lexer(code):
+oi hj vc vai me ajudar a refatorar um codigo e garantir que ele continue funcionaod perfeitamente, qual o motivo disso° quero escalar ele, de uma foram que todos os blocos que vc criar devem ter um pass caso ele nao seja necessario na implmentação do meu compilador, atualmente ele tem 3 arquivos lexer, parser e generator , iriei mandar aqui pra vc e vc vai criar um chians of responsability pra cada um desses arquivos, exemplo genrator)chain, parser_chain enfim, de uma foram que nova implementações irao apenas adiconar novos blocos dentro do chain, crie tbm parametros de cada bloco para identificação para que vc posso evitar de entrar em certos blocos caso haja ambiguidade, os arquivos sao: def lexer(code):
     tokens = []
     keywords = {
         'module', 'endmodule', 'input', 'output', 'inout', 'wire', 'reg',
@@ -148,15 +100,7 @@ def lexer(code):
         i += 1
 
     print("Lexer concluído. Tokens gerados:", tokens)
-    return tokens
-]
-
-
- parser: 
- #########################################################################################################################################
- 
- [
-class Parser:
+    return tokens,,,,,, class Parser:
     def __init__(self, tokens):
         self.tokens = tokens
         self.pos = 0
@@ -517,16 +461,7 @@ class Parser:
 
 def parse(tokens):
     parser = Parser(tokens)
-    return parser.parse()
-
- ]
-    
-    
-e generator: 
-######################################################################################################################################################################################################
-
-[
-def generate_python(ast):
+    return parser.parse(),,,,, def generate_python(ast):
     print("Iniciando geração de código Python com AST:", ast)
     python_code = []
     python_code.append("class Signal:\n    def __init__(self, value=0, bit_width=None):\n        self.value = value\n        self.bit_width = bit_width\n        if bit_width:\n            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n        self.prev_value = value  # Para detectar bordas\n\n    def set_value(self, value):\n        if self.bit_width:\n            self.value = value & self.max_value\n        else:\n            self.value = value\n\n")
@@ -799,172 +734,504 @@ def translate_statement(stmt, indent=0):
                 code.append(f"{indent_str}else:")
                 code.extend([translate_statement(s, indent + 1) for s in false_statements])
         return "\n".join(code)
-    return f"{indent_str}pass  # Declaração não suportada: {stmt['type']}"
+    return f"{indent_str}pass  # Declaração não suportada: {stmt['type']}" a view qe faz as requisições eh: # api/views.py
 
-]
-    
-    
-atualmente ao fazer um poste com: 
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from .compilerSysLogPy.lexer import lexer as syslog_lexer
+from .compilerSysLogPy.parser import parse as syslog_parse
+from .compilerSysLogPy.generator import generate_python
 
-######################################################################################################
+@api_view(['POST'])
+def compiler_syslog_py(request):
+    try:
+        code = request.data.get('code', '')
+        if not code:
+            return Response({'error': 'Nenhum código fornecido.'}, status=status.HTTP_400_BAD_REQUEST)
 
-[
+        # Tokenização
+        tokens = syslog_lexer(code)
 
-module main;
-    reg clk=0, rst=1;
-    reg [1:0] cmd=0, out;
-    
-    always #5 clk = ~clk;
-    
-    always @(posedge clk or posedge rst) begin
-        out <= rst ? 0 : cmd;
-        $display("%t: %b %b -> %b", $time, rst, cmd, out);
-    end
-    
-    initial begin
-        #10 rst=0;
-        repeat(3) #10 cmd=cmd+1;
-        #10 $finish;
-    end
-endmodule
-]
+        # Parsing
+        ast = syslog_parse(tokens)
 
-, esse codigo que simula os requisitos da etapa atual e temos a seguinte resposta e log: 
+        # Geração de Python
+        py_code = generate_python(ast)
+        
+        print(py_code)
 
+        return Response({
+            'tokens': tokens,
+            'ast': str(ast),
+            'python': py_code
+        }, status=status.HTTP_200_OK)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': f"Erro interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR), vc provavelmente vai mudar todos os arquivos e pra te norteia, os arquivos que ja passam nos testes sao: from django.test import TestCase
+from rest_framework.test import APIClient
+from rest_framework import status
 
-Erro: 
+class ConcatMonitorTestCase(TestCase):
+    def setUp(self):
+        self.client = APIClient()
 
-[
-Erro: Esperado SYMBOL ;, encontrado SYMBOL ,
+    def test_concat_with_monitor(self):
+        """Testa a geração de Python a partir de um Verilog com concatenação e $monitor."""
+        input_code = (
+            "module main (\n"
+            "    input logic a,\n"
+            "    input logic b,\n"
+            "    input logic clk,\n"
+            "    output logic [1:0] y\n"
+            ");\n"
+            "    reg [1:0] temp;\n"
+            "    always @(posedge clk) begin\n"
+            "        temp <= {a, b};\n"
+            "        y <= temp;\n"
+            "    end\n"
+            "    initial begin\n"
+            "        $monitor(\"Tempo: %t | a: %b | b: %b | y: %b\", $time, a, b, y);\n"
+            "        #50 $finish;\n"
+            "    end\n"
+            "endmodule"
+        )
+        response = self.client.post('/api/compile-syslog-py/', {'code': input_code}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK, f"Erro na API: {response.json()}")
 
-]
+        data = response.json()
+        py_code = data['python']
 
+        expected_py_code = (
+            "class Signal:\n"
+            "    def __init__(self, value=0, bit_width=None):\n"
+            "        self.value = value\n"
+            "        self.bit_width = bit_width\n"
+            "        if bit_width:\n"
+            "            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n"
+            "        self.prev_value = value  # Para detectar bordas\n"
+            "\n"
+            "    def set_value(self, value):\n"
+            "        if self.bit_width:\n"
+            "            self.value = value & self.max_value\n"
+            "        else:\n"
+            "            self.value = value\n"
+            "\n"
+            "\n"
+            "class main:\n"
+            "    def __init__(self):\n"
+            "        self.a = Signal(bit_width=None)  # input, logic\n"
+            "        self.b = Signal(bit_width=None)  # input, logic\n"
+            "        self.clk = Signal(bit_width=None)  # input, logic\n"
+            "        self.y = Signal(bit_width=(1, 0))  # output, logic, [1:0]\n"
+            "        self.temp = Signal(bit_width=(1, 0))  # reg\n"
+            "        self.time = 0  # Simulação de $time\n"
+            "\n"
+            "    def update_combinational(self):\n"
+            "        pass\n"
+            "\n"
+            "    def update_sequential(self):\n"
+            "        # Sensível a posedge de clk\n"
+            "        # Simulação simplificada: atualiza na borda\n"
+            "        if self.clk.value and not self.clk.prev_value:  # Borda positiva\n"
+            "            self.temp.set_value((self.b.value << 0) | (self.a.value << 1))\n"
+            "            self.y.set_value(self.temp.value)\n"
+            "        self.clk.prev_value = self.clk.value\n"
+            "\n"
+            "    def run_initial(self):\n"
+            "        # Simulação do bloco initial\n"
+            "        print(f\"Tempo: {self.time} | a: {self.a.value:b} | b: {self.b.value:b} | y: {self.y.value:b}\")\n"
+            "        if self.time == 50:\n"
+            "            return False  # $finish\n"
+            "        return True\n"
+            "\n"
+            "    def run(self):\n"
+            "        while self.run_initial():\n"
+            "            self.update_combinational()\n"
+            "            self.update_sequential()\n"
+            "            self.time += 1  # Passo de tempo baseado no clock\n"
+            "\n"
+            "# Teste manual\n"
+            "if __name__ == \"__main__\":\n"
+            "    sim = main()\n"
+            "    sim.run()"
+        )
 
-log: 
+        self.assertEqual(py_code.strip(), expected_py_code.strip(), "Código Python gerado não corresponde ao esperado.")
 
-[
-Iniciando lexer...
-Token adicionado: ('KEYWORD', 'module')
-Token adicionado: ('IDENTIFIER', 'main')
-Token adicionado: ('SYMBOL', ';')
-Token adicionado: ('KEYWORD', 'reg')
-Token adicionado: ('IDENTIFIER', 'clk')
-Token adicionado: ('OPERATOR', '=')
-Token adicionado: ('NUMBER', '0')
-Token adicionado: ('SYMBOL', ',')
-Token adicionado: ('IDENTIFIER', 'rst')
-Token adicionado: ('OPERATOR', '=')
-Token adicionado: ('NUMBER', '1')
-Token adicionado: ('SYMBOL', ';')
-Token adicionado: ('KEYWORD', 'reg')
-Token adicionado: ('SYMBOL', '[')
-Token adicionado: ('NUMBER', '1')
-Token adicionado: ('OPERATOR', ':')
-Token adicionado: ('NUMBER', '0')
-Token adicionado: ('SYMBOL', ']')
-Token adicionado: ('IDENTIFIER', 'cmd')
-Token adicionado: ('OPERATOR', '=')
-Token adicionado: ('NUMBER', '0')
-Token adicionado: ('SYMBOL', ',')
-Token adicionado: ('IDENTIFIER', 'out')
-Token adicionado: ('SYMBOL', ';')
-Token adicionado: ('KEYWORD', 'always')
-Token adicionado: ('OPERATOR', '#')
-Token adicionado: ('NUMBER', '5')
-Token adicionado: ('IDENTIFIER', 'clk')
-Token adicionado: ('OPERATOR', '=')
-Token adicionado: ('OPERATOR', '~')
-Token adicionado: ('IDENTIFIER', 'clk')
-Token adicionado: ('SYMBOL', ';')
-Token adicionado: ('KEYWORD', 'always')
-Token adicionado: ('SYMBOL', '@')
-Token adicionado: ('SYMBOL', '(')
-Token adicionado: ('KEYWORD', 'posedge')
-Token adicionado: ('IDENTIFIER', 'clk')
-Token adicionado: ('KEYWORD', 'or')
-Token adicionado: ('KEYWORD', 'posedge')
-Token adicionado: ('IDENTIFIER', 'rst')
-Token adicionado: ('SYMBOL', ')')
-Token adicionado: ('KEYWORD', 'begin')
-Token adicionado: ('IDENTIFIER', 'out')
-Token adicionado: ('OPERATOR', '<=')
-Token adicionado: ('IDENTIFIER', 'rst')
-Token desconhecido: ('UNKNOWN', '?')
-Token adicionado: ('NUMBER', '0')
-Token adicionado: ('OPERATOR', ':')
-Token adicionado: ('IDENTIFIER', 'cmd')
-Token adicionado: ('SYMBOL', ';')
-Token adicionado: ('IDENTIFIER', '$display')
-Token adicionado: ('SYMBOL', '(')
-Token adicionado: ('STRING', '%t: %b %b -> %b')
-Token adicionado: ('SYMBOL', ',')
-Token adicionado: ('KEYWORD', '$time')
-Token adicionado: ('SYMBOL', ',')
-Token adicionado: ('IDENTIFIER', 'rst')
-Token adicionado: ('SYMBOL', ',')
-Token adicionado: ('IDENTIFIER', 'cmd')
-Token adicionado: ('SYMBOL', ',')
-Token adicionado: ('IDENTIFIER', 'out')
-Token adicionado: ('SYMBOL', ')')
-Token adicionado: ('SYMBOL', ';')
-Token adicionado: ('KEYWORD', 'end')
-Token adicionado: ('KEYWORD', 'initial')
-Token adicionado: ('KEYWORD', 'begin')
-Token adicionado: ('OPERATOR', '#')
-Token adicionado: ('NUMBER', '10')
-Token adicionado: ('IDENTIFIER', 'rst')
-Token adicionado: ('OPERATOR', '=')
-Token adicionado: ('NUMBER', '0')
-Token adicionado: ('SYMBOL', ';')
-Token adicionado: ('IDENTIFIER', 'repeat')
-Token adicionado: ('SYMBOL', '(')
-Token adicionado: ('NUMBER', '3')
-Token adicionado: ('SYMBOL', ')')
-Token adicionado: ('OPERATOR', '#')
-Token adicionado: ('NUMBER', '10')
-Token adicionado: ('IDENTIFIER', 'cmd')
-Token adicionado: ('OPERATOR', '=')
-Token adicionado: ('IDENTIFIER', 'cmd')
-Token adicionado: ('OPERATOR', '+')
-Token adicionado: ('NUMBER', '1')
-Token adicionado: ('SYMBOL', ';')
-Token adicionado: ('OPERATOR', '#')
-Token adicionado: ('NUMBER', '10')
-Token adicionado: ('KEYWORD', '$finish')
-Token adicionado: ('SYMBOL', ';')
-Token adicionado: ('KEYWORD', 'end')
-Token adicionado: ('KEYWORD', 'endmodule')
-Lexer concluído. Tokens gerados: [('KEYWORD', 'module'), ('IDENTIFIER', 'main'), ('SYMBOL', ';'), ('KEYWORD', 'reg'), ('IDENTIFIER', 'clk'), ('OPERATOR', '='), ('NUMBER', '0'), ('SYMBOL', ','), ('IDENTIFIER', 'rst'), ('OPERATOR', '='), ('NUMBER', '1'), ('SYMBOL', ';'), ('KEYWORD', 'reg'), ('SYMBOL', '['), ('NUMBER', '1'), ('OPERATOR', ':'), ('NUMBER', '0'), ('SYMBOL', ']'), ('IDENTIFIER', 'cmd'), ('OPERATOR', '='), ('NUMBER', '0'), ('SYMBOL', ','), ('IDENTIFIER', 'out'), ('SYMBOL', ';'), ('KEYWORD', 'always'), ('OPERATOR', '#'), ('NUMBER', '5'), 
-('IDENTIFIER', 'clk'), ('OPERATOR', '='), ('OPERATOR', '~'), ('IDENTIFIER', 'clk'), ('SYMBOL', ';'), ('KEYWORD', 'always'), ('SYMBOL', '@'), ('SYMBOL', '('), ('KEYWORD', 'posedge'), ('IDENTIFIER', 'clk'), ('KEYWORD', 'or'), ('KEYWORD', 'posedge'), ('IDENTIFIER', 'rst'), ('SYMBOL', ')'), ('KEYWORD', 'begin'), ('IDENTIFIER', 'out'), ('OPERATOR', '<='), ('IDENTIFIER', 
-'rst'), ('UNKNOWN', '?'), ('NUMBER', '0'), ('OPERATOR', ':'), ('IDENTIFIER', 'cmd'), ('SYMBOL', ';'), ('IDENTIFIER', '$display'), ('SYMBOL', '('), ('STRING', '%t: %b %b -> %b'), ('SYMBOL', ','), ('KEYWORD', '$time'), ('SYMBOL', ','), ('IDENTIFIER', 'rst'), ('SYMBOL', ','), ('IDENTIFIER', 'cmd'), ('SYMBOL', ','), ('IDENTIFIER', 'out'), ('SYMBOL', ')'), ('SYMBOL', ';'), ('KEYWORD', 'end'), ('KEYWORD', 'initial'), ('KEYWORD', 'begin'), ('OPERATOR', '#'), ('NUMBER', '10'), ('IDENTIFIER', 'rst'), ('OPERATOR', '='), ('NUMBER', '0'), ('SYMBOL', ';'), ('IDENTIFIER', 'repeat'), ('SYMBOL', '('), ('NUMBER', '3'), ('SYMBOL', ')'), ('OPERATOR', '#'), ('NUMBER', '10'), ('IDENTIFIER', 'cmd'), ('OPERATOR', '='), ('IDENTIFIER', 'cmd'), ('OPERATOR', '+'), ('NUMBER', '1'), ('SYMBOL', ';'), ('OPERATOR', '#'), ('NUMBER', '10'), ('KEYWORD', '$finish'), ('SYMBOL', ';'), ('KEYWORD', 'end'), ('KEYWORD', 'endmodule')]
-Iniciando parser com tokens: [('KEYWORD', 'module'), ('IDENTIFIER', 'main'), ('SYMBOL', ';'), ('KEYWORD', 'reg'), ('IDENTIFIER', 'clk'), ('OPERATOR', '='), ('NUMBER', '0'), ('SYMBOL', 
-','), ('IDENTIFIER', 'rst'), ('OPERATOR', '='), ('NUMBER', '1'), ('SYMBOL', ';'), ('KEYWORD', 'reg'), ('SYMBOL', '['), ('NUMBER', '1'), ('OPERATOR', ':'), ('NUMBER', '0'), ('SYMBOL', ']'), ('IDENTIFIER', 'cmd'), ('OPERATOR', '='), ('NUMBER', '0'), ('SYMBOL', ','), ('IDENTIFIER', 'out'), ('SYMBOL', ';'), ('KEYWORD', 'always'), ('OPERATOR', '#'), ('NUMBER', '5'), ('IDENTIFIER', 'clk'), ('OPERATOR', '='), ('OPERATOR', '~'), ('IDENTIFIER', 'clk'), ('SYMBOL', ';'), ('KEYWORD', 'always'), ('SYMBOL', '@'), ('SYMBOL', '('), ('KEYWORD', 'posedge'), ('IDENTIFIER', 'clk'), ('KEYWORD', 'or'), ('KEYWORD', 'posedge'), ('IDENTIFIER', 'rst'), ('SYMBOL', ')'), ('KEYWORD', 'begin'), ('IDENTIFIER', 'out'), ('OPERATOR', '<='), ('IDENTIFIER', 'rst'), ('UNKNOWN', '?'), ('NUMBER', '0'), ('OPERATOR', ':'), ('IDENTIFIER', 'cmd'), ('SYMBOL', ';'), ('IDENTIFIER', '$display'), ('SYMBOL', '('), ('STRING', '%t: %b %b -> %b'), ('SYMBOL', ','), ('KEYWORD', '$time'), ('SYMBOL', ','), ('IDENTIFIER', 'rst'), ('SYMBOL', ','), ('IDENTIFIER', 'cmd'), ('SYMBOL', ','), ('IDENTIFIER', 'out'), ('SYMBOL', ')'), ('SYMBOL', ';'), ('KEYWORD', 'end'), ('KEYWORD', 'initial'), ('KEYWORD', 'begin'), ('OPERATOR', '#'), ('NUMBER', '10'), ('IDENTIFIER', 'rst'), ('OPERATOR', '='), ('NUMBER', '0'), ('SYMBOL', ';'), ('IDENTIFIER', 'repeat'), ('SYMBOL', '('), ('NUMBER', '3'), ('SYMBOL', ')'), ('OPERATOR', '#'), ('NUMBER', '10'), ('IDENTIFIER', 'cmd'), ('OPERATOR', '='), ('IDENTIFIER', 'cmd'), ('OPERATOR', '+'), ('NUMBER', '1'), ('SYMBOL', ';'), ('OPERATOR', '#'), ('NUMBER', '10'), ('KEYWORD', '$finish'), ('SYMBOL', ';'), ('KEYWORD', 'end'), ('KEYWORD', 'endmodule')]
-Parsing programa...
-Token atual (pos 0): ('KEYWORD', 'module')
-Parsing module...
-Token atual (pos 0): ('KEYWORD', 'module')
-Consumido: (KEYWORD, module)
-Token atual (pos 1): ('IDENTIFIER', 'main')
-Consumido: (IDENTIFIER, main)
-Token atual (pos 2): ('SYMBOL', ';')
-Token atual (pos 2): ('SYMBOL', ';')
-Consumido: (SYMBOL, ;)
-Token atual (pos 3): ('KEYWORD', 'reg')
-Token atual (pos 3): ('KEYWORD', 'reg')
-Parsing declaration...
-Token atual (pos 3): ('KEYWORD', 'reg')
-Token atual (pos 3): ('KEYWORD', 'reg')
-Consumido: (KEYWORD, reg)
-Token atual (pos 4): ('IDENTIFIER', 'clk')
-Token atual (pos 4): ('IDENTIFIER', 'clk')
-Consumido: (IDENTIFIER, clk)
-Token atual (pos 5): ('OPERATOR', '=')
-Token atual (pos 5): ('OPERATOR', '=')
-Consumido: (OPERATOR, =)
-Token atual (pos 6): ('NUMBER', '0')
-Consumido: (NUMBER, 0)
-Token atual (pos 7): ('SYMBOL', ',')
-Bad Request: /api/compile-syslog-py/
-[30/Mar/2025 10:33:07] "POST /api/compile-syslog-py/ HTTP/1.1" 400 50
+    def test_counter_reset_with_monitor(self):
+        """Testa a geração de Python a partir de um Verilog com contador, reset e $monitor."""
+        input_code = (
+            "module main;\n"
+            "    reg clk = 0;          // Clock interno inicializado em 0\n"
+            "    reg reset = 1;        // Reset inicializado em 1\n"
+            "    reg [3:0] counter;    // Contador de 4 bits (0 a 15)\n"
+            "\n"
+            "    // Gerador de clock\n"
+            "    always #5 clk = ~clk;\n"
+            "\n"
+            "    // Lógica do contador com reset\n"
+            "    always @(posedge clk) begin\n"
+            "        if (reset) begin\n"
+            "            counter <= 4'b0000;  // Reseta pra 0\n"
+            "        end else begin\n"
+            "            counter <= counter + 1;  // Incrementa o contador\n"
+            "        end\n"
+            "    end\n"
+            "\n"
+            "    // Monitoramento e simulação\n"
+            "    initial begin\n"
+            "        $monitor(\"Tempo: %t | clk: %b | reset: %b | counter: %d\", $time, clk, reset, counter);\n"
+            "        #10 reset = 0;       // Desativa o reset após 10 unidades\n"
+            "        #100 $finish;        // Termina após 100 unidades\n"
+            "    end\n"
+            "endmodule"
+        )
+        response = self.client.post('/api/compile-syslog-py/', {'code': input_code}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK, f"Erro na API: {response.json()}")
 
-]
+        data = response.json()
+        py_code = data['python']
+
+        expected_py_code = (
+            "class Signal:\n"
+            "    def __init__(self, value=0, bit_width=None):\n"
+            "        self.value = value\n"
+            "        self.bit_width = bit_width\n"
+            "        if bit_width:\n"
+            "            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n"
+            "        self.prev_value = value  # Para detectar bordas\n"
+            "\n"
+            "    def set_value(self, value):\n"
+            "        if self.bit_width:\n"
+            "            self.value = value & self.max_value\n"
+            "        else:\n"
+            "            self.value = value\n"
+            "\n"
+            "\n"
+            "class main:\n"
+            "    def __init__(self):\n"
+            "        self.clk = Signal(bit_width=None, value=0)  # reg\n"
+            "        self.reset = Signal(bit_width=None, value=1)  # reg\n"
+            "        self.counter = Signal(bit_width=(3, 0))  # reg\n"
+            "        self.time = 0  # Simulação de $time\n"
+            "\n"
+            "    def update_combinational(self):\n"
+            "        pass\n"
+            "\n"
+            "    def update_sequential(self):\n"
+            "        # Clock gerado com atraso de 5 unidades\n"
+            "        # Simulação simplificada: alterna o sinal\n"
+            "        self.clk.set_value(1 - self.clk.value)\n"
+            "        # Sensível a posedge de clk\n"
+            "        # Simulação simplificada: atualiza na borda\n"
+            "        if self.clk.value and not self.clk.prev_value:  # Borda positiva\n"
+            "            if self.reset.value:\n"
+            "                self.counter.set_value(0)\n"
+            "            else:\n"
+            "                self.counter.set_value(self.counter.value + 1)\n"
+            "        self.clk.prev_value = self.clk.value\n"
+            "\n"
+            "    def run_initial(self):\n"
+            "        # Simulação do bloco initial\n"
+            "        print(f\"Tempo: {self.time} | clk: {self.clk.value:b} | reset: {self.reset.value:b} | counter: {self.counter.value}\")\n"
+            "        if self.time == 10:\n"
+            "            self.reset.set_value(0)\n"
+            "        if self.time == 110:\n"
+            "            return False  # $finish\n"
+            "        return True\n"
+            "\n"
+            "    def run(self):\n"
+            "        while self.run_initial():\n"
+            "            self.update_combinational()\n"
+            "            self.update_sequential()\n"
+            "            self.time += 5  # Passo de tempo baseado no clock\n"
+            "\n"
+            "# Teste manual\n"
+            "if __name__ == \"__main__\":\n"
+            "    sim = main()\n"
+            "    sim.run()"
+        )
+
+        self.assertEqual(py_code.strip(), expected_py_code.strip(), "Código Python gerado não corresponde ao esperado.")
+
+    def test_counter_with_time_counter(self):
+        """Testa a geração de Python a partir de um Verilog com contador, reset e time_counter."""
+        input_code = (
+            "module main;\n"
+            "    // Sinais do sistema\n"
+            "    reg clk = 0;\n"
+            "    reg reset = 1;\n"
+            "    reg [3:0] counter = 0;\n"
+            "    \n"
+            "    // Parâmetros de simulação\n"
+            "    integer time_counter = 0;\n"
+            "    \n"
+            "    // Geração de clock\n"
+            "    always #5 clk = ~clk;\n"
+            "    \n"
+            "    // Lógica sequencial\n"
+            "    always @(posedge clk) begin\n"
+            "        if (reset) begin\n"
+            "            counter <= 0;\n"
+            "        end else begin\n"
+            "            counter <= counter + 1;\n"
+            "        end\n"
+            "    end\n"
+            "    \n"
+            "    // Bloco initial para simulação\n"
+            "    initial begin\n"
+            "        $monitor(\"Tempo: %0d | clk: %b | reset: %b | counter: %0d\", \n"
+            "                 $time, clk, reset, counter);\n"
+            "        #10 reset = 0;  // Desativa reset após 10 unidades de tempo\n"
+            "        #100 $finish;  // Termina simulação após 100 unidades adicionais\n"
+            "    end\n"
+            "endmodule"
+        )
+        response = self.client.post('/api/compile-syslog-py/', {'code': input_code}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK, f"Erro na API: {response.json()}")
+
+        data = response.json()
+        py_code = data['python']
+
+        expected_py_code = (
+            "class Signal:\n"
+            "    def __init__(self, value=0, bit_width=None):\n"
+            "        self.value = value\n"
+            "        self.bit_width = bit_width\n"
+            "        if bit_width:\n"
+            "            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n"
+            "        self.prev_value = value  # Para detectar bordas\n"
+            "\n"
+            "    def set_value(self, value):\n"
+            "        if self.bit_width:\n"
+            "            self.value = value & self.max_value\n"
+            "        else:\n"
+            "            self.value = value\n"
+            "\n"
+            "\n"
+            "class main:\n"
+            "    def __init__(self):\n"
+            "        self.clk = Signal(bit_width=None, value=0)  # reg\n"
+            "        self.reset = Signal(bit_width=None, value=1)  # reg\n"
+            "        self.counter = Signal(bit_width=(3, 0), value=0)  # reg\n"
+            "        self.time = 0  # Simulação de $time\n"
+            "\n"
+            "    def update_combinational(self):\n"
+            "        pass\n"
+            "\n"
+            "    def update_sequential(self):\n"
+            "        # Clock gerado com atraso de 5 unidades\n"
+            "        # Simulação simplificada: alterna o sinal\n"
+            "        self.clk.set_value(1 - self.clk.value)\n"
+            "        # Sensível a posedge de clk\n"
+            "        # Simulação simplificada: atualiza na borda\n"
+            "        if self.clk.value and not self.clk.prev_value:  # Borda positiva\n"
+            "            if self.reset.value:\n"
+            "                self.counter.set_value(0)\n"
+            "            else:\n"
+            "                self.counter.set_value(self.counter.value + 1)\n"
+            "        self.clk.prev_value = self.clk.value\n"
+            "\n"
+            "    def run_initial(self):\n"
+            "        # Simulação do bloco initial\n"
+            "        print(f\"Tempo: {self.time} | clk: {self.clk.value:b} | reset: {self.reset.value:b} | counter: {self.counter.value}\")\n"
+            "        if self.time == 10:\n"
+            "            self.reset.set_value(0)\n"
+            "        if self.time == 110:\n"
+            "            return False  # $finish\n"
+            "        return True\n"
+            "\n"
+            "    def run(self):\n"
+            "        while self.run_initial():\n"
+            "            self.update_combinational()\n"
+            "            self.update_sequential()\n"
+            "            self.time += 5  # Passo de tempo baseado no clock\n"
+            "\n"
+            "# Teste manual\n"
+            "if __name__ == \"__main__\":\n"
+            "    sim = main()\n"
+            "    sim.run()"
+        )
+
+        self.assertEqual(py_code.strip(), expected_py_code.strip(), "Código Python gerado não corresponde ao esperado.")  from django.test import TestCase
+from rest_framework.test import APIClient
+from rest_framework import status
+
+class SyslogPyNewTestCase(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_counter_with_monitor_new(self):
+        """Testa a geração de Python a partir de um Verilog com contador, clock e $monitor."""
+        input_code = (
+            "/* \n"
+            " * Do not change Module name \n"
+            "*/\n"
+            "module main;\n"
+            "  reg clk = 0;\n"
+            "  reg reset = 1;\n"
+            "  reg [1:0] count;  // Contador de 2 bits (0 a 3)\n"
+            "\n"
+            "  // Gerador de clock\n"
+            "  always #5 clk = ~clk;\n"
+            "\n"
+            "  // Lógica do contador\n"
+            "  always @(posedge clk or posedge reset) begin\n"
+            "    if (reset) \n"
+            "      count <= 2'b00;  // Começa em 0\n"
+            "    else if (count == 2'b11) // Se chegar em 3\n"
+            "      count <= 2'b00;  // Reinicia\n"
+            "    else\n"
+            "      count <= count + 1; // Incrementa\n"
+            "  end\n"
+            "\n"
+            "  initial begin\n"
+            "    // Monitorar os valores\n"
+            "    $monitor(\"Tempo: %t | Count: %d\", $time, count);\n"
+            "    \n"
+            "    // Reset inicial\n"
+            "    #10 reset = 0;\n"
+            "    \n"
+            "    // Executa até contar até 3 duas vezes\n"
+            "    #60 $finish;\n"
+            "  end\n"
+            "endmodule"
+        )
+        response = self.client.post('/api/compile-syslog-py/', {'code': input_code}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK, f"Erro na API: {response.json()}")
+
+        data = response.json()
+        py_code = data['python']
+
+        expected_py_code = (
+            "class Signal:\n"
+            "    def __init__(self, value=0, bit_width=None):\n"
+            "        self.value = value\n"
+            "        self.bit_width = bit_width\n"
+            "        if bit_width:\n"
+            "            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n"
+            "        self.prev_value = value  # Para detectar bordas\n"
+            "\n"
+            "    def set_value(self, value):\n"
+            "        if self.bit_width:\n"
+            "            self.value = value & self.max_value\n"
+            "        else:\n"
+            "            self.value = value\n"
+            "\n"
+            "\n"
+            "class main:\n"
+            "    def __init__(self):\n"
+            "        self.clk = Signal(bit_width=None, value=0)  # reg\n"
+            "        self.reset = Signal(bit_width=None, value=1)  # reg\n"
+            "        self.count = Signal(bit_width=(1, 0))  # reg\n"
+            "        self.time = 0  # Simulação de $time\n"
+            "\n"
+            "    def update_combinational(self):\n"
+            "        pass\n"
+            "\n"
+            "    def update_sequential(self):\n"
+            "        # Clock gerado com atraso de 5 unidades\n"
+            "        # Simulação simplificada: alterna o sinal\n"
+            "        self.clk.set_value(1 - self.clk.value)\n"
+            "        # Sensível a posedge de clk, posedge de reset\n"
+            "        # Simulação simplificada: atualiza na borda\n"
+            "        if self.clk.value and not self.clk.prev_value or self.reset.value and not self.reset.prev_value:  # Borda positiva\n"
+            "            if self.reset.value:\n"
+            "                self.count.set_value(0)\n"
+            "            elif self.count.value == 3:\n"
+            "                self.count.set_value(0)\n"
+            "            else:\n"
+            "                self.count.set_value(self.count.value + 1)\n"
+            "        self.clk.prev_value = self.clk.value\n"
+            "        self.reset.prev_value = self.reset.value\n"
+            "\n"
+            "    def run_initial(self):\n"
+            "        # Simulação do bloco initial\n"
+            "        print(f\"Tempo: {self.time} | Count: {self.count.value}\")\n"
+            "        if self.time == 10:\n"
+            "            self.reset.set_value(0)\n"
+            "        if self.time == 70:\n"
+            "            return False  # $finish\n"
+            "        return True\n"
+            "\n"
+            "    def run(self):\n"
+            "        while self.run_initial():\n"
+            "            self.update_combinational()\n"
+            "            self.update_sequential()\n"
+            "            self.time += 5  # Passo de tempo baseado no clock\n"
+            "\n"
+            "# Teste manual\n"
+            "if __name__ == \"__main__\":\n"
+            "    sim = main()\n"
+            "    sim.run()"
+        )
+
+        self.assertEqual(py_code.strip(), expected_py_code.strip(), "Código Python gerado não corresponde ao esperado.")
+        
+    def test_simple_clock_new(self):
+        """Testa a geração de Python a partir de um Verilog simples com clock e $finish."""
+        input_code = (
+            "module main;\n"
+            "  reg clk = 0;\n"
+            "  always #5 clk = ~clk;\n"
+            "  initial begin\n"
+            "    #50 $finish;\n"
+            "  end\n"
+            "endmodule"
+        )
+        response = self.client.post('/api/compile-syslog-py/', {'code': input_code}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK, f"Erro na API: {response.json()}")
+
+        data = response.json()
+        py_code = data['python']
+
+        expected_py_code = (
+            "class Signal:\n"
+            "    def __init__(self, value=0, bit_width=None):\n"
+            "        self.value = value\n"
+            "        self.bit_width = bit_width\n"
+            "        if bit_width:\n"
+            "            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n"
+            "        self.prev_value = value  # Para detectar bordas\n"
+            "\n"
+            "    def set_value(self, value):\n"
+            "        if self.bit_width:\n"
+            "            self.value = value & self.max_value\n"
+            "        else:\n"
+            "            self.value = value\n"
+            "\n"
+            "\n"
+            "class main:\n"
+            "    def __init__(self):\n"
+            "        self.clk = Signal(bit_width=None, value=0)  # reg\n"
+            "        self.time = 0  # Simulação de $time\n"
+            "\n"
+            "    def update_combinational(self):\n"
+            "        pass\n"
+            "\n"
+            "    def update_sequential(self):\n"
+            "        # Clock gerado com atraso de 5 unidades\n"
+            "        # Simulação simplificada: alterna o sinal\n"
+            "        self.clk.set_value(1 - self.clk.value)\n"
+            "\n"
+            "    def run_initial(self):\n"
+            "        # Simulação do bloco initial\n"
+            "        if self.time == 50:\n"
+            "            return False  # $finish\n"
+            "        return True\n"
+            "\n"
+            "    def run(self):\n"
+            "        while self.run_initial():\n"
+            "            self.update_combinational()\n"
+            "            self.update_sequential()\n"
+            "            self.time += 5  # Passo de tempo baseado no clock\n"
+            "\n"
+            "# Teste manual\n"
+            "if __name__ == \"__main__\":\n"
+            "    sim = main()\n"
+            "    sim.run()"
+        )
+
+        self.assertEqual(py_code.strip(), expected_py_code.strip(), "Código Python gerado não corresponde ao esperado.")

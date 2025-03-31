@@ -1,0 +1,110 @@
+# from django.test import TestCase
+# from rest_framework.test import APIClient
+# from rest_framework import status
+
+# class SyslogPyNewTestCase(TestCase):
+#     def setUp(self):
+#         self.client = APIClient()
+
+#     def test_cmd_out_register(self):
+#         """Testa a geração de Python a partir de um Verilog com clock, reset, cmd e out."""
+#         input_code = (
+#             "module main;\n"
+#             "    reg clk=0, rst=1;\n"
+#             "    reg [1:0] cmd=0, out;\n"
+#             "    \n"
+#             "    always #5 clk = ~clk;\n"
+#             "    \n"
+#             "    always @(posedge clk or posedge rst) begin\n"
+#             "        out <= rst ? 0 : cmd;\n"
+#             "        $display(\"%t: %b %b -> %b\", $time, rst, cmd, out);\n"
+#             "    end\n"
+#             "    \n"
+#             "    initial begin\n"
+#             "        #10 rst=0;\n"
+#             "        repeat(3) #10 cmd=cmd+1;\n"
+#             "        #10 $finish;\n"
+#             "    end\n"
+#             "endmodule"
+#         )
+#         response = self.client.post('/api/compile-syslog-py/', {'code': input_code}, format='json')
+#         self.assertEqual(response.status_code, status.HTTP_200_OK, f"Erro na API: {response.json()}")
+
+#         data = response.json()
+#         py_code = data['python']
+
+#         expected_py_code = (
+#             "class Signal:\n"
+#             "    def __init__(self, value=0, bit_width=None):\n"
+#             "        self.value = value\n"
+#             "        self.bit_width = bit_width\n"
+#             "        if bit_width:\n"
+#             "            self.max_value = (1 << (bit_width[0] - bit_width[1] + 1)) - 1\n"
+#             "        else:\n"
+#             "            self.max_value = None\n"
+#             "        self.prev_value = value  # Para detectar bordas\n"
+#             "\n"
+#             "    def set_value(self, value):\n"
+#             "        self.prev_value = self.value\n"
+#             "        if self.bit_width and self.max_value is not None:\n"
+#             "            self.value = value & self.max_value\n"
+#             "        else:\n"
+#             "            self.value = value\n"
+#             "\n"
+#             "    def __str__(self):\n"
+#             "        if self.value is None:\n"
+#             "            return 'xx'\n"
+#             "        return f'{self.value:0{self.bit_width[0] - self.bit_width[1] + 1}b}' if self.bit_width else f'{self.value:b}'\n"
+#             "\n"
+#             "\n"
+#             "class main:\n"
+#             "    def __init__(self):\n"
+#             "        self.clk = Signal(bit_width=None, value=0)  # reg\n"
+#             "        self.rst = Signal(bit_width=None, value=1)  # reg\n"
+#             "        self.cmd = Signal(bit_width=(1, 0), value=0)  # reg\n"
+#             "        self.out = Signal(bit_width=(1, 0))  # reg\n"
+#             "        self.time = 0  # Simulação de $time\n"
+#             "\n"
+#             "    def update_combinational(self):\n"
+#             "        pass\n"
+#             "\n"
+#             "    def update_sequential(self):\n"
+#             "        # Clock gerado com atraso de 5 unidades\n"
+#             "        # Simulação simplificada: alterna o sinal\n"
+#             "        self.clk.set_value(~self.clk.value)\n"
+#             "        # Sensível a posedge de clk, posedge de rst\n"
+#             "        # Simulação simplificada: atualiza na borda\n"
+#             "        if self.clk.value and not self.clk.prev_value or self.rst.value and not self.rst.prev_value:  # Borda positiva\n"
+#             "            self.out.set_value((0 if self.rst.value else self.cmd.value))\n"
+#             "            print(f\"{self.time}: {self.rst} {self.cmd} -> {self.out}\")\n"
+#             "        self.clk.prev_value = self.clk.value\n"
+#             "        self.rst.prev_value = self.rst.value\n"
+#             "\n"
+#             "    def run_initial(self):\n"
+#             "        # Simulação do bloco initial\n"
+#             "        if self.time == 10:\n"
+#             "            self.rst.set_value(0)\n"
+#             "        if self.time == 20:\n"
+#             "            self.cmd.set_value(self.cmd.value + 1)\n"
+#             "        if self.time == 30:\n"
+#             "            self.cmd.set_value(self.cmd.value + 1)\n"
+#             "        if self.time == 40:\n"
+#             "            self.cmd.set_value(self.cmd.value + 1)\n"
+#             "        if self.time == 50:\n"
+#             "            print(f'main.v:15: $finish called at {self.time} (1s)')\n"
+#             "            return False  # $finish\n"
+#             "        return True\n"
+#             "\n"
+#             "    def run(self):\n"
+#             "        while self.run_initial():\n"
+#             "            self.update_combinational()\n"
+#             "            self.update_sequential()\n"
+#             "            self.time += 5  # Passo de tempo baseado no clock\n"
+#             "\n"
+#             "# Teste manual\n"
+#             "if __name__ == \"__main__\":\n"
+#             "    sim = main()\n"
+#             "    sim.run()"
+#         )
+
+#         self.assertEqual(py_code.strip(), expected_py_code.strip(), "Código Python gerado não corresponde ao esperado.")
