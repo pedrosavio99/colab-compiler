@@ -1,0 +1,408 @@
+compilerwithmodules
+ ┣ generators
+ ┃ ┣ __pycache__
+ ┃ ┃ ┣ initial_generator.cpython-311.pyc
+ ┃ ┃ ┣ module_generator.cpython-311.pyc
+ ┃ ┃ ┣ print_generator.cpython-311.pyc
+ ┃ ┃ ┣ var_generator.cpython-311.pyc
+ ┃ ┃ ┗ __init__.cpython-311.pyc
+ ┃ ┣ initial_generator.py
+ ┃ ┣ module_generator.py
+ ┃ ┣ print_generator.py
+ ┃ ┣ var_generator.py
+ ┃ ┗ __init__.py
+ ┣ handlers
+ ┃ ┣ __pycache__
+ ┃ ┃ ┣ initial_handler.cpython-311.pyc
+ ┃ ┃ ┣ module_handler.cpython-311.pyc
+ ┃ ┃ ┣ print_handler.cpython-311.pyc
+ ┃ ┃ ┣ var_handler.cpython-311.pyc
+ ┃ ┃ ┗ __init__.cpython-311.pyc
+ ┃ ┣ initial_handler.py
+ ┃ ┣ module_handler.py
+ ┃ ┣ print_handler.py
+ ┃ ┣ var_handler.py
+ ┃ ┗ __init__.py
+ ┣ parsers
+ ┃ ┣ __pycache__
+ ┃ ┃ ┣ initial_parser.cpython-311.pyc
+ ┃ ┃ ┣ module_parser.cpython-311.pyc
+ ┃ ┃ ┣ print_parser.cpython-311.pyc
+ ┃ ┃ ┣ var_parser.cpython-311.pyc
+ ┃ ┃ ┗ __init__.cpython-311.pyc
+ ┃ ┣ initial_parser.py
+ ┃ ┣ module_parser.py
+ ┃ ┣ print_parser.py
+ ┃ ┣ var_parser.py
+ ┃ ┗ __init__.py
+ ┣ __pycache__
+ ┃ ┣ ast.cpython-311.pyc
+ ┃ ┣ dispatch.cpython-311.pyc
+ ┃ ┣ generator.cpython-311.pyc
+ ┃ ┣ lexer.cpython-311.pyc
+ ┃ ┣ parser.cpython-311.pyc
+ ┃ ┣ pipeline.cpython-311.pyc
+ ┃ ┣ utils.cpython-311.pyc
+ ┃ ┗ __init__.cpython-311.pyc
+ ┣ ast.py
+ ┣ dispatch.py
+ ┣ generator.py
+ ┣ lexer.py
+ ┣ parser.py
+ ┣ pipeline.py
+ ┣ utils.py
+ ┗ __init__.py
+
+
+Tutorial: Como Adicionar Suporte a uma Nova Sintaxe no Compilador SystemVerilog-to-Python
+Este tutorial explica como adicionar suporte a uma nova sintaxe no compilador localizado em compilerwithmodules. Vamos usar como exemplo a sintaxe $finish, que termina a simulação em SystemVerilog, e traduzi-la para Python. O processo envolve criar um handler, parser e generator, e integrá-los ao pipeline existente.
+
+Estrutura do Projeto
+A pasta compilerwithmodules contém:
+
+handlers/: Handlers que tokenizam o código SystemVerilog.
+parsers/: Parsers que transformam tokens em nós da AST.
+generators/: Geradores que convertem a AST em código Python.
+lexer.py: Tokeniza o código.
+parser.py: Constrói a AST.
+generator.py: Gera o código Python.
+dispatch.py: Mapeia tipos de nós a geradores via GENERATOR_DISPATCH.
+pipeline.py: Orquestra o processo (lexer → parser → generator).
+utils.py: Ferramentas como logger e generate_unique_id.
+ast.py: Define a classe ASTNode.
+Passo 1: Definir a Sintaxe a Ser Suportada
+Vamos adicionar suporte para $finish;, que termina a simulação em SystemVerilog. No Python, isso pode ser traduzido como exit() ou uma lógica de controle (como um return em um loop).
+
+Exemplo de Entrada:
+
+verilog
+
+Recolher
+
+Encapsular
+
+Copiar
+module test;
+  initial
+    begin
+      $display("Starting...");
+      $finish;
+    end
+endmodule
+Saída Esperada em Python:
+
+python
+
+Recolher
+
+Encapsular
+
+Copiar
+from sys import argv
+# Module: test (ID: algum-id)
+# Initial block
+print("Starting...")
+exit()
+# End of module: test
+Passo 2: Criar o Handler (Lexer)
+O handler identifica $finish; e cria um token.
+
+Crie o arquivo finish_handler.py:
+Caminho: compilerwithmodules/handlers/finish_handler.py
+python
+
+Recolher
+
+Encapsular
+
+Copiar
+from ..utils import generate_unique_id, logger
+import re
+
+def process_finish(line):
+    """Processa a instrução $finish no código SystemVerilog."""
+    logger.debug("[FinishHandler][process_finish] Processando linha: %s", line)
+    match = re.match(r'\$finish\s*;', line.strip())
+    if match:
+        token = {'type': 'FINISH', 'id': generate_unique_id()}
+        logger.debug("[FinishHandler][process_finish] Token gerado: %s", token)
+        return token
+    logger.debug("[FinishHandler][process_finish] Nenhuma correspondência para linha: %s", line)
+    return None
+Atualize o lexer.py:
+Adicione o novo handler à lista de handlers.
+Caminho: compilerwithmodules/lexer.py
+python
+
+Recolher
+
+Encapsular
+
+Copiar
+from .handlers.print_handler import process_print
+from .handlers.var_handler import process_var
+from .handlers.module_handler import process_module
+from .handlers.initial_handler import process_initial
+from .handlers.finish_handler import process_finish  # Novo handler
+from .utils import logger
+
+handlers = [
+    process_print,
+    process_var,
+    process_module,
+    process_initial,
+    process_finish  # Adicionado aqui
+]
+
+def syslog_lexer(code):
+    logger.debug("[Lexer][syslog_lexer] Iniciando tokenização do código")
+    tokens = []
+    lines = code.split('\n')
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        for handler in handlers:
+            token = handler(line)
+            if token:
+                tokens.append(token)
+                break
+        else:
+            logger.warning("[Lexer][syslog_lexer] Linha não reconhecida: %s", line)
+    logger.debug("[Lexer][syslog_lexer] Finalizando tokenização com tokens: %s", tokens)
+    return tokens
+Passo 3: Criar o Parser
+O parser transforma o token FINISH em um nó da AST.
+
+Crie o arquivo finish_parser.py:
+Caminho: compilerwithmodules/parsers/finish_parser.py
+python
+
+Recolher
+
+Encapsular
+
+Copiar
+from ..utils import logger
+from ..ast import ASTNode
+
+def parse_finish(token, block_stack):
+    """Transforma o token FINISH em um nó da AST."""
+    logger.debug("[FinishParser][parse_finish] Processando token: %s", token)
+    node = ASTNode('FINISH', {}, token['id'])
+    logger.debug("[FinishParser][parse_finish] Nó criado: %s", str(node))
+    return node
+Atualize o parser.py:
+Adicione o parser ao dicionário PARSER_DISPATCH.
+Caminho: compilerwithmodules/parser.py
+python
+
+Recolher
+
+Encapsular
+
+Copiar
+from .parsers.print_parser import parse_print
+from .parsers.var_parser import parse_var
+from .parsers.module_parser import parse_module_start, parse_module_end
+from .parsers.initial_parser import parse_initial_start, parse_block_start, parse_block_end
+from .parsers.finish_parser import parse_finish  # Novo parser
+from .utils import logger
+from .ast import ASTNode
+
+PARSER_DISPATCH = {
+    'PRINT': parse_print,
+    'VAR_DECL': parse_var,
+    'MODULE_START': parse_module_start,
+    'MODULE_END': parse_module_end,
+    'INITIAL_START': parse_initial_start,
+    'BLOCK_START': parse_block_start,
+    'BLOCK_END': parse_block_end,
+    'FINISH': parse_finish  # Adicionado aqui
+}
+
+def syslog_parse(tokens):
+    logger.debug("[Parser][syslog_parse] Iniciando parsing dos tokens: %s", tokens)
+    ast = []
+    module_stack = []
+    block_stack = []
+
+    for token in tokens:
+        token_type = token['type']
+        parser_func = PARSER_DISPATCH.get(token_type)
+        if parser_func:
+            if token_type == 'MODULE_START':
+                node = parser_func(token, module_stack)
+            elif token_type == 'MODULE_END':
+                node = parser_func(token, module_stack)
+                if node:
+                    ast.append(node)
+            else:
+                node = parser_func(token, block_stack)
+                if node:
+                    if block_stack:
+                        block_stack[-1].children.append(node)
+                    elif module_stack:
+                        module_stack[-1].children.append(node)
+                    else:
+                        ast.append(node)
+            if token_type == 'INITIAL_START' or token_type == 'BLOCK_START':
+                if node:
+                    block_stack.append(node)
+            elif token_type == 'BLOCK_END' and block_stack:
+                block_stack.pop()
+        else:
+            logger.warning("[Parser][syslog_parse] Tipo de token não suportado: %s", token_type)
+
+    logger.debug("[Parser][syslog_parse] Finalizando parsing com AST: %s", [str(node) for node in ast])
+    return ast
+Passo 4: Criar o Generator
+O generator converte o nó FINISH em código Python.
+
+Crie o arquivo finish_generator.py:
+Caminho: compilerwithmodules/generators/finish_generator.py
+python
+
+Recolher
+
+Encapsular
+
+Copiar
+from ..utils import logger
+
+def generate_finish(node):
+    """Gera código Python para o nó FINISH."""
+    logger.debug("[FinishGenerator][generate_finish] Processando nó: %s", str(node))
+    code = ['exit()']  # Termina a execução do programa
+    logger.debug("[FinishGenerator][generate_finish] Código gerado: %s", code)
+    return code
+Atualize o dispatch.py:
+Adicione o gerador ao GENERATOR_DISPATCH.
+Caminho: compilerwithmodules/dispatch.py
+python
+
+Recolher
+
+Encapsular
+
+Copiar
+GENERATOR_DISPATCH = {}
+
+def initialize_generator_dispatch():
+    """Inicializa o GENERATOR_DISPATCH com os geradores necessários."""
+    from .generators.print_generator import generate_print
+    from .generators.var_generator import generate_var
+    from .generators.module_generator import generate_module
+    from .generators.initial_generator import generate_initial
+    from .generators.finish_generator import generate_finish  # Novo gerador
+
+    GENERATOR_DISPATCH.update({
+        'PRINT': generate_print,
+        'VAR_DECL': generate_var,
+        'MODULE': generate_module,
+        'INITIAL': generate_initial,
+        'BLOCK': lambda node: [f"# Block (ID: {node.id})"],
+        'FINISH': generate_finish  # Adicionado aqui
+    })
+Verifique o generator.py:
+Ele já chama initialize_generator_dispatch() dinamicamente, então não precisa de alterações:
+python
+
+Recolher
+
+Encapsular
+
+Copiar
+from .dispatch import GENERATOR_DISPATCH, initialize_generator_dispatch
+from .utils import logger
+
+def generate_python(ast):
+    logger.debug("[Generator][generate_python] Iniciando geração de código Python para AST: %s", [str(node) for node in ast])
+    if not GENERATOR_DISPATCH:
+        initialize_generator_dispatch()
+    
+    py_code = []
+    imports = ["from sys import argv"]
+
+    for node in ast:
+        node_type = node.type
+        generator_func = GENERATOR_DISPATCH.get(node_type)
+        if generator_func:
+            code_lines = generator_func(node)
+            py_code.extend(code_lines)
+        else:
+            logger.warning("[Generator][generate_python] Tipo de nó não suportado: %s", node_type)
+
+    final_code = '\n'.join(imports + py_code)
+    logger.debug("[Generator][generate_python] Finalizando geração com código: %s", final_code)
+    return final_code
+Passo 5: Testar a Nova Sintaxe
+Reinicie o servidor:
+bash
+
+Recolher
+
+Encapsular
+
+Copiar
+python manage.py runserver
+Teste com curl:
+bash
+
+Recolher
+
+Encapsular
+
+Copiar
+curl -X POST http://127.0.0.1:8000/api/compile-syslog-py/ -H "Content-Type: application/json" -d "{\"code\": \"module test;\n  initial\n    begin\n      $display(\\\"Starting...\\\");\n      $finish;\n    end\nendmodule\"}"
+Saída Esperada:
+json
+
+Recolher
+
+Encapsular
+
+Copiar
+{
+    "tokens": [
+        {"type": "MODULE_START", "name": "test", "id": "algum-id"},
+        {"type": "INITIAL_START", "id": "outro-id"},
+        {"type": "BLOCK_START", "id": "mais-um-id"},
+        {"type": "PRINT", "message": "Starting...", "var": null, "id": "id-4"},
+        {"type": "FINISH", "id": "id-5"},
+        {"type": "BLOCK_END", "id": "id-6"},
+        {"type": "MODULE_END", "id": "id-7"}
+    ],
+    "ast": ["ASTNode(type=MODULE, value={'name': 'test'}, id=algum-id, children=[...])"],
+    "python": "from sys import argv\n# Module: test (ID: algum-id)\n# Initial block\nprint(\"Starting...\")\nexit()\n# End of module: test"
+}
+Valide o Código Python:
+Copie o python da resposta para um arquivo test.py e execute:
+bash
+
+Recolher
+
+Encapsular
+
+Copiar
+python test.py
+Saída esperada: Starting... (e o programa termina).
+Passo 6: Depuração (Se Algo Der Errado)
+Se houver problemas, envie os logs (como você prometeu!). Aqui está como diagnosticar:
+
+Lexer:
+Verifique os logs para ver se o token FINISH aparece em [Lexer][syslog_lexer] Finalizando tokenização com tokens.
+Se não aparecer, ajuste a regex em finish_handler.py.
+Parser:
+Veja se o nó FINISH está na AST em [Parser][syslog_parse] Finalizando parsing com AST.
+Se não estiver, confirme que parse_finish está sendo chamado em PARSER_DISPATCH.
+Generator:
+Cheque se exit() aparece em [Generator][generate_python] Finalizando geração com código.
+Se não, verifique se generate_finish está registrado em GENERATOR_DISPATCH.
+Resumo
+Para adicionar uma nova sintaxe:
+
+Handler: Crie em handlers/ e adicione ao lexer.py.
+Parser: Crie em parsers/ e adicione ao parser.py.
+Generator: Crie em generators/ e adicione ao dispatch.py.
+Teste: Use curl ou adicione um teste em api/tests/.
