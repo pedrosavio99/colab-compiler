@@ -1,13 +1,13 @@
 from ..utils import logger
 
-def generate_print(node):
-    """Gera código Python para o nó PRINT."""
-    logger.debug("[PrintGenerator][generate_print] Processando nó: %s", str(node))
+def generate_print(node, indent_level=0):
+    logger.debug("[PrintGenerator][generate_print] Processando nó: %s, nível: %d", str(node), indent_level)
+    indent = "    " * indent_level
     message = node.value['message']
-    var = node.value['var']
+    var = node.value.get('var')
     if var:
-        code = [f'print("{message}".format(self.{var}.value))']
+        code = [f"{indent}print(\"{message}\".format(self.{var}.value))"]
     else:
-        code = [f'print("{message}")']
+        code = [f"{indent}print(\"{message}\")"]
     logger.debug("[PrintGenerator][generate_print] Código gerado: %s", code)
     return code
