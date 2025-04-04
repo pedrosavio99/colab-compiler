@@ -1,0 +1,66 @@
+Tokens encontrados no código:
+Palavras-chave da linguagem:
+
+module, endmodule, input, output, logic, parameter, typedef, enum, always, case, endcase, default, begin, end, task, endtask, if, else, posedge, negedge, or, assign, for, function, endfunction
+
+Tipos de dados:
+
+bit, int, logic, enum
+
+Operadores:
+
+Aritméticos: +, -, *, /, %
+
+Lógicos: &&, ||, !, &, |, ^, ~
+
+Relacionais: ==, !=, >, <, >=, <=
+
+Bitwise: &, |, ^, ~, <<, >>
+
+Atribuição: =, <=, +=, -=
+
+Condicional: ?:
+
+Concatenação: {}
+
+Replicação: {n{}}
+
+Delimitadores:
+
+;, ,, :, (, ), {, }, [, ], #, @, ., ->
+
+Literais:
+
+Números: 0, 1, 2'b01, 4'b1010, 50, etc.
+
+Strings: Mensagens em $display
+
+Identificadores:
+
+Nomes de módulos: controle
+
+Nomes de variáveis: reset, clock, motor, port1, etc.
+
+Nomes de tasks: atenderAndar, tratarBotaoInterno, etc.
+
+Diretivas de compilador:
+
+$display, $time, $countones
+
+Comentários:
+
+// Comentários de linha única
+
+/* Comentários de múltiplas linhas */
+
+Pré-processador:
+
+Não há muitos no exemplo, mas geralmente inclui `define`, include, etc.
+
+Outros:
+
+'b para literais binários
+
+'d para literais decimais
+
+'h para literais hexadecimais

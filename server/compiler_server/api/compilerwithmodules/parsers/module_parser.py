@@ -6,7 +6,7 @@ def parse_module_start(token, module_stack):
     node = ASTNode('MODULE', {'name': token['name']}, token['id'])
     module_stack.append(node)
     logger.debug("[ModuleParser][parse_module_start] Nó criado e empilhado: %s", str(node))
-    return None
+    return node  # Retorna o nó MODULE
 
 def parse_module_end(token, module_stack):
     logger.debug("[ModuleParser][parse_module_end] Processando token: %s", token)

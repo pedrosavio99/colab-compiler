@@ -8,7 +8,7 @@ def generate_python(ast):
         initialize_generator_dispatch()
     
     py_code = []
-    imports = ["from sys import argv"]
+    # imports = ["from sys import argv"]
 
     for node in ast:
         node_type = node.type
@@ -19,6 +19,6 @@ def generate_python(ast):
         else:
             logger.warning("[Generator][generate_python] Tipo de nó não suportado: %s", node_type)
 
-    final_code = '\n'.join(imports + py_code)
+    final_code = '\n'.join(py_code)
     logger.debug("[Generator][generate_python] Finalizando geração com código: %s", final_code)
     return final_code

@@ -1,17 +1,19 @@
-# your_app/compilerwithmodules/handlers/var_handler.py
-import re
 from ..utils import generate_unique_id, logger
+import re
 
 def process_var(line):
-    """Processa declarações de variáveis."""
-    logger.debug("[VarHandler][process_var] Entrando na função para linha: %s", line)
-    if re.match(r'reg\s*\[\d+:\d+\]\s*\w+;', line):
-        logger.debug("[VarHandler][process_var] Processando: identificado reg")
-        bits = re.search(r'\[(\d+):(\d+)\]', line)
-        width = int(bits.group(1)) - int(bits.group(2)) + 1
-        name = re.search(r'\w+;', line).group(0)[:-1]
-        token = {'type': 'VAR_DECL', 'width': width, 'name': name, 'id': generate_unique_id()}
-        logger.debug("[VarHandler][process_var] Saindo com token: %s", token)
+    logger.debug("[VarHandler][process_var] Processando linha: %s", line)
+    var_match = re.match(r'reg\s+(?:\[(\d+):(\d+)\])?\s*(\w+)\s*=\s*(\d+)', line)
+    if var_match:
+        msb, lsb, name, value = var_match.groups()
+        width = int(msb) - int(lsb) + 1 if msb and lsb else None
+        token = {'type': 'VAR_DECL', 'name': name, 'width': width, 'value': int(value), 'id': generate_unique_id()}
+        logger.debug("[VarHandler][process_var] Token gerado: %s", token)
         return token
-    logger.debug("[VarHandler][process_var] Saindo sem ação para linha: %s", line)
+    assign_match = re.match(r'(\w+)\s*<=?\s*([^;]+);', line.strip())
+    if assign_match:
+        name, expr = assign_match.groups()
+        token = {'type': 'ASSIGN', 'name': name, 'expr': expr.strip(), 'id': generate_unique_id()}
+        logger.debug("[VarHandler][process_var] Token ASSIGN gerado: %s", token)
+        return token
     return None

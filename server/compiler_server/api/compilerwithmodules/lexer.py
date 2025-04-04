@@ -1,3 +1,6 @@
+from .handlers.if_handler import process_if
+from .handlers.always_handler import process_always
+from .handlers.port_handler import process_port
 from .handlers.print_handler import process_print
 from .handlers.var_handler import process_var
 from .handlers.module_handler import process_module
@@ -8,7 +11,10 @@ handlers = [
     process_print,
     process_var,
     process_module,
-    process_initial
+    process_initial,
+    process_port,
+    process_always,
+    process_if,
 ]
 
 def syslog_lexer(code):
