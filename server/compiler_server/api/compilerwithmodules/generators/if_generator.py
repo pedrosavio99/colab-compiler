@@ -9,10 +9,10 @@ def generate_if(node, indent_level=0):
     indent = "    " * indent_level
     code = [f"{indent}if {condition}:"]
     
-    # Processa os filhos do IF com indentação adicional
+    # Processa apenas os filhos diretos do IF
     for child in node.children:
         gen_func = GENERATOR_DISPATCH.get(child.type)
-        if gen_func and child.type != 'ELSE':
+        if gen_func:
             logger.debug("[IfGenerator][generate_if] Chamando gerador para %s com nível: %d", child.type, indent_level + 1)
             child_code = gen_func(child, indent_level + 1)  # Nível + 1 para os filhos
             code.extend(child_code)
@@ -25,7 +25,7 @@ def generate_else(node, indent_level=0):
     indent = "    " * indent_level
     code = [f"{indent}else:"]
     
-    # Processa os filhos do ELSE com indentação adicional
+    # Processa apenas os filhos diretos do ELSE
     for child in node.children:
         gen_func = GENERATOR_DISPATCH.get(child.type)
         if gen_func:

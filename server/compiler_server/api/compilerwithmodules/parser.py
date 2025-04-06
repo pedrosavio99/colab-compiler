@@ -51,7 +51,19 @@ def syslog_parse(tokens):
                         module_stack[-1].children.append(node)
                         block_stack.append(node)  # Inicia o bloco
                         logger.debug("[Parser] Aninhado ALWAYS_POSEDGE no MODULE e block_stack: %s", str(node))
-                elif token_type in ('IF', 'ASSIGN', 'PRINT'):  # Aninha no bloco ativo
+                elif token_type == 'IF':
+                    if block_stack:
+                        block_stack[-1].children.append(node)
+                        block_stack.append(node)  # Empilha o IF como bloco ativo
+                        logger.debug("[Parser] Aninhado IF no bloco ativo e empilhado: %s", str(node))
+                elif token_type == 'ELSE':
+                    if block_stack and block_stack[-1].type == 'IF':
+                        block_stack.pop()  # Fecha o IF
+                    if block_stack:
+                        block_stack[-1].children.append(node)
+                        block_stack.append(node)  # Empilha o ELSE como bloco ativo
+                        logger.debug("[Parser] Aninhado ELSE no bloco ativo e empilhado: %s", str(node))
+                elif token_type in ('ASSIGN', 'PRINT'):
                     if block_stack:
                         block_stack[-1].children.append(node)
                         logger.debug("[Parser] Aninhado %s no bloco ativo: %s", token_type, str(node))
@@ -59,7 +71,7 @@ def syslog_parse(tokens):
                         module_stack[-1].children.append(node)
                         logger.debug("[Parser] Aninhado %s no MODULE: %s", token_type, str(node))
                 elif token_type == 'BLOCK_START':
-                    pass
+                    pass  # Já tratado pelo parser específico, se necessário
                 elif token_type == 'BLOCK_END':
                     if block_stack:
                         block_stack.pop()
